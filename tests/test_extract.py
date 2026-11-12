@@ -1,6 +1,6 @@
 from relay.extract import (
     RawBlock, body_left_margin, build_page_records, clean_text, dehyphenate_join,
-    drop_margin_noise, find_arxiv_stamp, is_heading,
+    drop_margin_noise, find_arxiv_stamp, is_heading, printed_page_numbers,
 )
 
 H = 800.0  # page height used by the fixtures
@@ -79,6 +79,20 @@ def test_figure_label_clusters_and_stray_letters_are_not_headings():
     ]
     _records, meta = build_page_records("p", kept, 10.0, n_pages=3, dropped_by_page={})
     assert meta["headings"] == []
+
+
+def test_printed_page_numbers_are_kept_separate_from_physical_pages():
+    blocks = [
+        rb(1, "Title block"),                                    # no printed number on page 1
+        rb(2, "Body"), rb(2, "1", y0=775.0, y1=790.0),           # physical 2, printed 1
+        rb(3, "Body"), rb(3, "2", y0=775.0, y1=790.0),
+        rb(3, "17", y0=300.0, y1=320.0),                         # digits mid-page are not page numbers
+        rb(4, "3", y0=775.0, y1=790.0, rotated=True),            # rotated text is ignored
+    ]
+    assert printed_page_numbers(blocks) == {2: "1", 3: "2"}
+    records, _ = build_page_records("p", [rb(1, "x")], 10.0, n_pages=3, dropped_by_page={},
+                                    printed={2: "1"})
+    assert [r.printed_page for r in records] == [None, "1", None]
 
 
 def test_body_left_margin_is_the_most_common_paragraph_edge():

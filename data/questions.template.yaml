@@ -8,9 +8,13 @@
 #
 # Gold entries say where the answer lives:
 #   paper:    attention | moshi | dynamic-chunking
-#   pages:    PDF page indexes (1-based, as shown by `python -m relay.cli inspect`)
-#   evidence: phrases that must ALL occur in the chunk (case and punctuation ignored)
-# Give `pages`, `evidence`, or both. An answerable question needs at least one
+#   pages:    PHYSICAL PDF page indexes: 1-based position in the file, as shown by
+#             `python -m relay.cli inspect`. Not the number printed on the page.
+#   printed_pages: numbers TYPESET on the pages (can differ from the physical index)
+#   evidence: phrases that must ALL occur in the retrieved chunks (case and punctuation ignored)
+#   group:    optional; entries with the same group are alternative locations of one fact
+# Verify labels with `python -m relay.cli check-gold`.
+# Give `pages`, `printed_pages`, `evidence`, or a mix. An answerable question needs at least one
 # gold entry; an unanswerable question must have none.
 #
 # Check your gold labels by reading the paper, not by running the retriever:

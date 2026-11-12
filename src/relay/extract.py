@@ -184,6 +184,28 @@ def body_left_margin(blocks: list[RawBlock]) -> Optional[float]:
     return float(counts.most_common(1)[0][0]) if counts else None
 
 
+def _in_margin(b: RawBlock) -> bool:
+    """True if the block lies in the top or bottom 10% of its page."""
+    return b.page_height > 0 and (b.y1 <= 0.10 * b.page_height or b.y0 >= 0.90 * b.page_height)
+
+
+def printed_page_numbers(blocks: list[RawBlock]) -> dict[int, str]:
+    """Printed page number per physical page: a bare number in the page margin.
+
+    Physical page = 1-based position in the PDF file. Printed page = the number
+    typeset on the page. They can differ (front matter, cover pages), so both
+    are kept. Pages with no readable printed number are absent from the result.
+    """
+    out: dict[int, str] = {}
+    for b in blocks:
+        if b.rotated or b.page in out or not _in_margin(b):
+            continue
+        text = b.text.strip()
+        if re.fullmatch(r"\d{1,4}", text):
+            out[b.page] = text
+    return out
+
+
 def _margin_key(text: str) -> str:
     return re.sub(r"\d+", "#", text.lower()).strip()
 
@@ -194,10 +216,7 @@ def drop_margin_noise(blocks: list[RawBlock], n_pages: int) -> tuple[list[RawBlo
     A margin block (top or bottom 10% of the page) is dropped if its text, with
     digits masked, appears on at least max(3, 30% of pages) distinct pages.
     """
-    def in_margin(b: RawBlock) -> bool:
-        return b.page_height > 0 and (
-            b.y1 <= 0.10 * b.page_height or b.y0 >= 0.90 * b.page_height
-        )
+    in_margin = _in_margin
 
     pages_by_key: dict[str, set[int]] = {}
     for b in blocks:
@@ -261,6 +280,7 @@ def build_page_records(
     n_pages: int,
     dropped_by_page: dict[int, int],
     body_x0: Optional[float] = None,
+    printed: Optional[dict[int, str]] = None,
 ) -> tuple[list[PageRecord], dict[str, Any]]:
     by_page: dict[int, list[RawBlock]] = {p: [] for p in range(1, n_pages + 1)}
     for b in kept:
@@ -299,7 +319,10 @@ def build_page_records(
                 Block(text=b.text, kind="heading" if heading else "body", in_references=in_refs)
             )
         records.append(
-            PageRecord(paper_key=paper_key, page=p, blocks=tuple(blocks), dropped=dropped_by_page.get(p, 0))
+            PageRecord(
+                paper_key=paper_key, page=p, blocks=tuple(blocks),
+                dropped=dropped_by_page.get(p, 0), printed_page=(printed or {}).get(p),
+            )
         )
     return records, {"headings": headings, "references_start_page": refs_start}
 
@@ -314,7 +337,8 @@ def extract_pdf(path: Path, paper_key: str) -> tuple[list[PageRecord], dict[str,
     kept, dropped = drop_margin_noise(raw, n_pages)
     body = body_font_size(kept)
     body_x0 = body_left_margin(kept)
-    records, meta = build_page_records(paper_key, kept, body, n_pages, dropped, body_x0)
+    printed = printed_page_numbers(raw)
+    records, meta = build_page_records(paper_key, kept, body, n_pages, dropped, body_x0, printed)
     report = {
         "paper_key": paper_key,
         "pages": n_pages,
@@ -323,6 +347,12 @@ def extract_pdf(path: Path, paper_key: str) -> tuple[list[PageRecord], dict[str,
         "blocks_dropped": sum(dropped.values()),
         "body_font_size": body,
         "body_left_margin": body_x0,
+        "printed_pages": {str(p): v for p, v in sorted(printed.items())},
+        # physical page minus printed page -> number of pages with that offset
+        # ({"0": 14} means physical and printed numbers agree on 14 pages)
+        "page_label_offsets": {
+            str(k): n for k, n in sorted(Counter(p - int(v) for p, v in printed.items()).items())
+        },
         "headings_found": len(meta["headings"]),
         "headings": [{"page": p, "text": t} for p, t in meta["headings"]],
         "references_start_page": meta["references_start_page"],

@@ -43,6 +43,7 @@ class PageRecord:
     page: int
     blocks: tuple[Block, ...]
     dropped: int = 0   # header/footer/rotated blocks removed from this page
+    printed_page: Optional[str] = None   # number typeset on the page, if one was found
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -50,6 +51,7 @@ class PageRecord:
             "page": self.page,
             "blocks": [b.to_dict() for b in self.blocks],
             "dropped": self.dropped,
+            "printed_page": self.printed_page,
         }
 
     @classmethod
@@ -59,6 +61,7 @@ class PageRecord:
             page=int(d["page"]),
             blocks=tuple(Block.from_dict(b) for b in d.get("blocks", [])),
             dropped=int(d.get("dropped", 0)),
+            printed_page=d.get("printed_page"),
         )
 
 
@@ -74,6 +77,10 @@ class Chunk:
     section: Optional[str]
     text: str
     approx_tokens: int   # characters / 4; NOT a real token count
+    # Numbers typeset on the first and last page of the chunk. Kept separate from
+    # page_start / page_end (physical PDF indexes); None if no number was found.
+    printed_start: Optional[str] = None
+    printed_end: Optional[str] = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -82,6 +89,8 @@ class Chunk:
             "setting_id": self.setting_id,
             "page_start": self.page_start,
             "page_end": self.page_end,
+            "printed_start": self.printed_start,
+            "printed_end": self.printed_end,
             "section": self.section,
             "text": self.text,
             "approx_tokens": self.approx_tokens,
@@ -98,6 +107,8 @@ class Chunk:
             section=d.get("section"),
             text=d["text"],
             approx_tokens=int(d["approx_tokens"]),
+            printed_start=d.get("printed_start"),
+            printed_end=d.get("printed_end"),
         )
 
 

@@ -8,6 +8,7 @@ Commands
   search          query a setting and print the hits
   inspect         show extracted blocks of one page (to see headings, noise, tables)
   eval-retrieval  score retrieval offline against your questions file
+  check-gold      verify gold pages and evidence phrases against the extracted text
 
 No command in this module calls the model provider.
 """
@@ -26,6 +27,7 @@ from .eval_retrieval import (
     PROVENANCE, evaluate, format_table, load_questions, save_result,
 )
 from .extract import extract_pdf, read_pages, write_pages
+from .gold_check import check_gold, format_gold_check
 from .ingest import ingest
 from .retrieve import Retriever
 from .schema import RelayError
@@ -33,6 +35,18 @@ from .schema import RelayError
 
 def _preview(text: str, width: int = 260) -> str:
     return textwrap.shorten(text, width=width, placeholder=" ...")
+
+
+def _span(a: object, b: object) -> str:
+    return str(a) if a == b else f"{a}-{b}"
+
+
+def _page_label(c) -> str:
+    """'pdf p.6-7 (printed 5-6)'. Physical PDF index first, printed number separately."""
+    s = f"pdf p.{_span(c.page_start, c.page_end)}"
+    if c.printed_start is not None and c.printed_end is not None:
+        s += f" (printed {_span(c.printed_start, c.printed_end)})"
+    return s
 
 
 def _ranges(pages: Sequence[int]) -> str:
@@ -128,8 +142,7 @@ def cmd_search(args: argparse.Namespace) -> int:
     )
     for h in res.hits:
         c = h.chunk
-        pages = f"p.{c.page_start}" if c.page_start == c.page_end else f"p.{c.page_start}-{c.page_end}"
-        print(f"\n#{h.rank}  score {h.score:.3f}  {c.chunk_id}  {c.paper_key} {pages}  section: {c.section}")
+        print(f"\n#{h.rank}  score {h.score:.3f}  {c.chunk_id}  {c.paper_key} {_page_label(c)}  section: {c.section}")
         print("    " + _preview(c.text, 300))
     if not res.hits:
         print("\n(no hits)")
@@ -143,7 +156,11 @@ def cmd_inspect(args: argparse.Namespace) -> int:
     if not pages:
         raise RelayError(f"no page {args.page} for '{args.paper}' in {cfg.paths.pages_file}")
     rec = pages[0]
-    print(f"{rec.paper_key} page {rec.page}: {len(rec.blocks)} blocks, {rec.dropped} dropped as header/footer/rotated")
+    printed = f"printed {rec.printed_page}" if rec.printed_page else "no printed number found"
+    print(
+        f"{rec.paper_key} pdf page {rec.page} ({printed}): {len(rec.blocks)} blocks, "
+        f"{rec.dropped} dropped as header/footer/rotated"
+    )
     for i, b in enumerate(rec.blocks):
         tag = "H" if b.kind == "heading" else " "
         ref = "R" if b.in_references else " "
@@ -156,8 +173,18 @@ def cmd_inspect(args: argparse.Namespace) -> int:
         ]
         print(f"\nchunks of {args.setting} touching this page:")
         for c in chunks:
-            print(f"  {c.chunk_id}  p.{c.page_start}-{c.page_end}  ~{c.approx_tokens} tokens  section: {c.section}")
+            print(f"  {c.chunk_id}  {_page_label(c)}  ~{c.approx_tokens} tokens  section: {c.section}")
     return 0
+
+
+def cmd_check_gold(args: argparse.Namespace) -> int:
+    cfg = load_config()
+    questions = load_questions(args.questions or cfg.paths.questions, [p.key for p in cfg.papers])
+    rows = check_gold(read_pages(cfg.paths.pages_file), questions)
+    print(format_gold_check(rows))
+    bad = [r for r in rows if r["status"] != "OK"]
+    print(f"\n{len(rows)} evidence phrases checked, {len(bad)} need attention")
+    return 1 if bad else 0
 
 
 def cmd_eval(args: argparse.Namespace) -> int:
@@ -222,6 +249,10 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--settings", nargs="+", help="settings to score (default: all with chunk files)")
     s.add_argument("--no-save", action="store_true", help="do not write results/retrieval_eval/*.json")
     s.set_defaults(func=cmd_eval)
+
+    s = sub.add_parser("check-gold", help="verify gold pages and evidence phrases against the extracted text")
+    s.add_argument("--questions", type=_path_arg, help="questions file (default from config)")
+    s.set_defaults(func=cmd_check_gold)
     return p
 
 

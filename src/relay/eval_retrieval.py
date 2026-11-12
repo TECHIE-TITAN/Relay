@@ -9,13 +9,25 @@ A gold entry says where the answer lives:
     paper: <paper key>
     pages: [3, 4]                    # optional; PDF page indexes
     evidence: ["scaled dot product"] # optional; phrases that must all occur in the chunk
-A chunk satisfies an entry if the paper matches, its page range overlaps
-`pages` (when given), and it contains every `evidence` phrase (when given,
-compared after normalising case and punctuation). An entry needs at least one
-of `pages` / `evidence`.
+`pages` are 1-based PHYSICAL PDF page indexes (position in the file);
+`printed_pages` are the page numbers typeset on the pages. They can differ and
+are matched separately; if both are given, both must match. An entry needs at
+least one of `pages` / `printed_pages` / `evidence`. Optional `group`: entries
+sharing a group are ALTERNATIVE locations of the same fact (any one will do);
+entries in different groups are all required.
 
-Per question:  hit_any = some retrieved chunk satisfies some gold entry,
-               hit_all = every gold entry is satisfied by some retrieved chunk.
+An entry is satisfied by the RETRIEVED SET (the chunks the generator would
+see): among retrieved chunks of the right paper whose page range overlaps
+`pages` (when given), every `evidence` phrase must occur somewhere (case and
+punctuation ignored). The older, stricter test, all phrases inside ONE chunk,
+is still computed and reported as `strict`; it penalises small chunks that
+split adjacent sentences.
+
+Per question:  hit_any = some entry satisfied,
+               hit_all = every group has a satisfied entry,
+               strict  = hit_all using the single-chunk test,
+               evidence_recall = mean over groups of the best fraction of
+                                 evidence phrases found.
 Unanswerable questions have no gold; the correct behaviour is to abstain.
 """
 from __future__ import annotations
@@ -31,7 +43,7 @@ import yaml
 
 from .retrieve import Retriever
 from .schema import Chunk, RelayError
-from .textutil import normalize_for_match
+from .textutil import normalize_for_match, phrase_in
 
 PROVENANCE = "retrieval-only, offline, no model calls"
 
@@ -45,6 +57,8 @@ class Gold:
     paper: str
     pages: tuple[int, ...] = ()
     evidence: tuple[str, ...] = ()
+    group: Optional[str] = None   # entries sharing a group are alternatives
+    printed_pages: tuple[int, ...] = ()   # numbers typeset on the page (not physical indexes)
 
 
 @dataclass(frozen=True)
@@ -92,10 +106,16 @@ def load_questions(path: Path, valid_papers: Sequence[str]) -> list[Question]:
                     f"{where} ({qid}): gold.paper must be one of {list(valid_papers)}"
                 )
             pages = tuple(int(x) for x in (g.get("pages") or []))
+            printed = tuple(int(x) for x in (g.get("printed_pages") or []))
             evidence = tuple(str(x) for x in (g.get("evidence") or []))
-            if not pages and not evidence:
-                raise QuestionsError(f"{where} ({qid}): each gold entry needs 'pages' or 'evidence'")
-            golds.append(Gold(paper=g["paper"], pages=pages, evidence=evidence))
+            if not pages and not evidence and not printed:
+                raise QuestionsError(
+                    f"{where} ({qid}): each gold entry needs 'pages' or 'evidence' (or 'printed_pages')"
+                )
+            group = str(g["group"]) if g.get("group") is not None else None
+            golds.append(
+                Gold(paper=g["paper"], pages=pages, evidence=evidence, group=group, printed_pages=printed)
+            )
         if q["answerable"] and not golds:
             raise QuestionsError(f"{where} ({qid}): an answerable question needs at least one gold entry")
         if not q["answerable"] and golds:
@@ -109,18 +129,68 @@ def load_questions(path: Path, valid_papers: Sequence[str]) -> list[Question]:
     return out
 
 
+def _printed_range(chunk: Chunk) -> Optional[tuple[int, int]]:
+    try:
+        return int(chunk.printed_start), int(chunk.printed_end)   # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+
+
+def _page_ok(chunk: Chunk, gold: Gold) -> bool:
+    """Physical pages and printed pages are checked separately; both must hold if both are given."""
+    if gold.pages and not any(chunk.page_start <= p <= chunk.page_end for p in gold.pages):
+        return False
+    if gold.printed_pages:
+        rng = _printed_range(chunk)
+        if rng is None or not any(rng[0] <= p <= rng[1] for p in gold.printed_pages):
+            return False
+    return True
+
+
 def chunk_satisfies(chunk: Chunk, gold: Gold) -> bool:
     if chunk.paper_key != gold.paper:
         return False
-    if gold.pages and not any(chunk.page_start <= p <= chunk.page_end for p in gold.pages):
+    if not _page_ok(chunk, gold):
         return False
     if gold.evidence:
-        hay = f" {normalize_for_match(chunk.text)} "
+        hay = normalize_for_match(chunk.text)
         for phrase in gold.evidence:
-            needle = normalize_for_match(phrase)
-            if needle and f" {needle} " not in hay:
+            if not phrase_in(hay, phrase):
                 return False
     return True
+
+
+def _relevant(chunks: Sequence[Chunk], gold: Gold) -> list[Chunk]:
+    """Retrieved chunks of the gold paper whose page range overlaps gold.pages."""
+    return [c for c in chunks if c.paper_key == gold.paper and _page_ok(c, gold)]
+
+
+def evidence_fraction(chunks: Sequence[Chunk], gold: Gold) -> float:
+    """Share of the entry's evidence phrases found in the retrieved set.
+
+    0.0 if no retrieved chunk is in the right paper and pages. An entry with no
+    evidence phrases (pages only) scores 1.0 once such a chunk is retrieved.
+    """
+    rel = _relevant(chunks, gold)
+    if not rel:
+        return 0.0
+    if not gold.evidence:
+        return 1.0
+    hays = [normalize_for_match(c.text) for c in rel]
+    found = sum(1 for phrase in gold.evidence if any(phrase_in(h, phrase) for h in hays))
+    return found / len(gold.evidence)
+
+
+def entry_satisfied(chunks: Sequence[Chunk], gold: Gold) -> bool:
+    return evidence_fraction(chunks, gold) >= 1.0
+
+
+def _groups(golds: Sequence[Gold]) -> list[list[Gold]]:
+    """Alternatives (same `group`) are bundled; every other entry is its own group."""
+    out: dict[str, list[Gold]] = {}
+    for i, g in enumerate(golds):
+        out.setdefault(g.group if g.group else f"#{i}", []).append(g)
+    return list(out.values())
 
 
 def evaluate(retrievers: Mapping[str, Retriever], questions: Sequence[Question]) -> dict[str, Any]:
@@ -130,7 +200,8 @@ def evaluate(retrievers: Mapping[str, Retriever], questions: Sequence[Question])
     for sid, retriever in retrievers.items():
         ans = [q for q in questions if q.answerable]
         unans = [q for q in questions if not q.answerable]
-        hit_any = hit_all = false_abstain = correct_abstain = 0
+        hit_any = hit_all = strict_all = false_abstain = correct_abstain = 0
+        recalls: list[float] = []
         context_tokens: list[int] = []
         latencies: list[float] = []
         for q in questions:
@@ -146,10 +217,18 @@ def evaluate(retrievers: Mapping[str, Retriever], questions: Sequence[Question])
                 "chunk_ids": [c.chunk_id for c in chunks],
             }
             if q.answerable:
-                sat = [any(chunk_satisfies(c, g) for c in chunks) for g in q.gold]
-                row["hit_any"], row["hit_all"] = any(sat), all(sat)
+                groups = _groups(q.gold)
+                union = [[entry_satisfied(chunks, g) for g in grp] for grp in groups]
+                single = [[any(chunk_satisfies(c, g) for c in chunks) for g in grp] for grp in groups]
+                recall = [max(evidence_fraction(chunks, g) for g in grp) for grp in groups]
+                row["hit_any"] = any(any(u) for u in union)
+                row["hit_all"] = all(any(u) for u in union)
+                row["hit_all_single_chunk"] = all(any(s) for s in single)
+                row["evidence_recall"] = round(statistics.fmean(recall), 4)
                 hit_any += row["hit_any"]
                 hit_all += row["hit_all"]
+                strict_all += row["hit_all_single_chunk"]
+                recalls.append(row["evidence_recall"])
                 false_abstain += res.abstain
             else:
                 correct_abstain += res.abstain
@@ -161,6 +240,8 @@ def evaluate(retrievers: Mapping[str, Retriever], questions: Sequence[Question])
         settings_out[sid] = {
             "n_answerable": len(ans), "n_unanswerable": len(unans),
             "hit_any_pct": pct(hit_any, len(ans)), "hit_all_pct": pct(hit_all, len(ans)),
+            "strict_all_pct": pct(strict_all, len(ans)),
+            "evidence_recall_pct": round(100.0 * statistics.fmean(recalls), 1) if recalls else None,
             "false_abstain_pct": pct(false_abstain, len(ans)),
             "correct_abstain_pct": pct(correct_abstain, len(unans)),
             "mean_context_tokens_approx": round(statistics.fmean(context_tokens), 1) if context_tokens else None,
@@ -173,7 +254,8 @@ def evaluate(retrievers: Mapping[str, Retriever], questions: Sequence[Question])
 def format_table(result: Mapping[str, Any]) -> str:
     cols = [
         ("setting", None), ("answerable", "n_answerable"), ("hit_any%", "hit_any_pct"),
-        ("hit_all%", "hit_all_pct"), ("false_abstain%", "false_abstain_pct"),
+        ("hit_all%", "hit_all_pct"), ("strict%", "strict_all_pct"),
+        ("ev_recall%", "evidence_recall_pct"), ("false_abstain%", "false_abstain_pct"),
         ("unanswerable", "n_unanswerable"), ("correct_abstain%", "correct_abstain_pct"),
         ("ctx_tokens~", "mean_context_tokens_approx"), ("median_ms", "median_search_ms"),
     ]

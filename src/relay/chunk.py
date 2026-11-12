@@ -37,6 +37,7 @@ class _Word(NamedTuple):
     text: str
     page: int
     section: Optional[str]
+    printed: Optional[str] = None
 
 
 def _segment_cost(seg: Sequence[_Word]) -> float:
@@ -73,7 +74,7 @@ def _segments(pages: Sequence[PageRecord], section_aware: bool) -> list[list[_Wo
                 if section_aware and segments[-1]:
                     segments.append([])
             for w in blk.text.split():
-                segments[-1].append(_Word(w, rec.page, section))
+                segments[-1].append(_Word(w, rec.page, section, rec.printed_page))
     segments = [s for s in segments if s]
     return _merge_tiny(segments) if section_aware else segments
 
@@ -126,6 +127,8 @@ def build_chunks(pages: Sequence[PageRecord], setting: RetrievalSetting) -> list
                     setting_id=setting.id,
                     page_start=words[0].page,
                     page_end=words[-1].page,
+                    printed_start=words[0].printed,
+                    printed_end=words[-1].printed,
                     section=words[len(words) // 2].section,
                     text=text,
                     approx_tokens=approx_tokens(text),

@@ -3,7 +3,7 @@ import math
 import pytest
 
 from relay.bm25 import BM25Index
-from relay.textutil import approx_tokens, normalize_for_match, tokenize
+from relay.textutil import approx_tokens, normalize_for_match, phrase_in, tokenize
 
 # Hand-worked example. Docs: d0 = [a, b] (len 2), d1 = [a, a, c] (len 3).
 # N = 2, avgdl = 2.5, k1 = 1.5, b = 0.75.
@@ -54,9 +54,25 @@ def test_known_item_search_returns_the_right_document_first():
 
 def test_tokenize_keeps_decimals_splits_hyphens_and_drops_stopwords():
     assert tokenize("28.4 BLEU") == ["28.4", "bleu"]
-    assert tokenize("multi-head attention") == ["multi", "head", "attention"]
+    assert tokenize("multi-head attention") == ["multi", "head", "attention", "multihead"]
     assert tokenize("What is the base model") == ["base", "model"]
     assert tokenize("not") == ["not"]            # negation is kept
+
+
+def test_hyphenated_and_rejoined_words_share_a_token():
+    # extraction re-joins "position-" + "wise" into "positionwise"; the query keeps the hyphen
+    assert "positionwise" in tokenize("position-wise feed-forward")
+    assert set(tokenize("position-wise")) & set(tokenize("a positionwise network"))
+    assert tokenize("4.5-5 bytes") == ["4.5", "5", "bytes"]        # numbers are not compounds
+    assert "hnet" in tokenize("H-Net")
+
+
+def test_phrase_in_tolerates_rejoined_hyphenation_for_long_phrases_only():
+    hay = normalize_for_match("a simple, positionwise fully connected feed-forward network")
+    assert phrase_in(hay, "position-wise fully connected feed-forward network")
+    assert not phrase_in(hay, "fully connected recurrent network")
+    assert phrase_in(normalize_for_match("O(1) steps"), "O(1)")
+    assert not phrase_in(normalize_for_match("go1 ahead"), "o 1")   # short phrase: no squashed fallback
 
 
 def test_text_helpers():

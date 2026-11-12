@@ -1,0 +1,228 @@
+# TEMPLATE. Copy this file to data/questions.yaml and write YOUR OWN questions.
+# The brief requires at least 15 questions "you wrote yourself". Nothing in this
+# file is real content: every entry below is a placeholder showing the format.
+#
+# Suggested mix (about 20 total): single-fact, numeric/table, cross-paper,
+# multi-step, and several questions the papers do NOT answer (unanswerable),
+# including plausible-sounding ones that tempt a retriever to bluff.
+#
+# Gold entries say where the answer lives:
+#   paper:    attention | moshi | dynamic-chunking
+#   pages:    PDF page indexes (1-based, as shown by `python -m relay.cli inspect`)
+#   evidence: phrases that must ALL occur in the chunk (case and punctuation ignored)
+# Give `pages`, `evidence`, or both. An answerable question needs at least one
+# gold entry; an unanswerable question must have none.
+#
+# Check your gold labels by reading the paper, not by running the retriever:
+# a label copied from retriever output would make the evaluation circular.
+
+version: 1
+questions:
+  - id: q01
+    text: "How many identical layers are used in the Transformer's encoder stack?"
+    answerable: true
+    category: single-fact
+    gold:
+      - paper: attention
+        pages: [3]
+        evidence: ["stack of N = 6 identical layers"]
+
+  - id: q02
+    text: "In scaled dot-product attention, by what quantity are the query-key dot products divided before applying softmax?"
+    answerable: true
+    category: single-fact
+    gold:
+      - paper: attention
+        pages: [4]
+        evidence: ["divide each by"]
+    
+  - id: q03
+    text: "How many attention heads does the Transformer base architecture use, and what are the key and value dimensions of each head?"
+    answerable: true
+    category: numeric
+    gold:
+      - paper: attention
+        pages: [5]
+        evidence:
+          - "h = 8 parallel attention layers"
+          - "dk = dv = dmodel /h = 64"
+
+  - id: q04
+    text: "Why does the Transformer require positional encodings, and how are they constructed in the original architecture?"
+    answerable: true
+    category: multi-step
+    gold:
+      - paper: attention
+        pages: [6]
+        evidence:
+          - "make use of the order of the sequence"
+          - "sine and cosine functions of different frequencies"
+  
+  - id: q05
+    text: "What BLEU scores does the paper report on WMT 2014 English-to-German and English-to-French translation?"
+    answerable: true
+    category: numeric
+    gold:
+      - paper: attention
+        pages: [1]
+        evidence:
+          - "28.4 BLEU"
+          - "41.8"
+  
+  - id: q06
+    text: "According to Table 1, what are the per-layer computational complexity and minimum number of sequential operations for self-attention?"
+    answerable: true
+    category: numeric
+    gold:
+      - paper: attention
+        pages: [6]
+        evidence:
+          - "Self-Attention"
+          - "O(n2 · d)"
+          - "O(1)"
+
+  - id: q07
+    text: "What theoretical and practical latency does the Moshi paper report?"
+    answerable: true
+    category: numeric
+    gold:
+      - paper: moshi
+        pages: [1]
+        evidence:
+          - "theoretical latency of 160ms"
+          - "200ms in practice"
+
+  - id: q08
+    text: "How does Moshi represent the user's speech and its own generated speech during full-duplex dialogue?"
+    answerable: true
+    category: single-fact
+    gold:
+      - paper: moshi
+        pages: [1]
+        evidence:
+          - "modeling separately its own speech and that of the user into parallel streams"
+
+  - id: q09
+    text: "What is the Inner Monologue method, and how does it improve speech generation?"
+    answerable: true
+    category: single-fact
+    gold:
+      - paper: moshi
+        pages: [1]
+        evidence:
+          - "first predict time-aligned text tokens as a prefix to audio tokens"
+
+  - id: q10
+    text: "What is Mimi, and what technique does it use to represent audio?"
+    answerable: true
+    category: single-fact
+    gold:
+      - paper: moshi
+        pages: [3]
+        group: mimi_definition
+        evidence:
+          - "converts audio into the discrete tokens predicted by Moshi and back"
+          - "residual vector quantization (RVQ)"
+      # Alternative location for the same fact, added 2026-11-12 after the first
+      # retrieval eval; see data/gold_changes.md. Section 3.3 supports both claims
+      # on its own: Mimi is a neural audio codec (physical p.9) and it discretizes
+      # with a Residual Vector Quantizer (physical p.10).
+      - paper: moshi
+        pages: [9, 10]
+        group: mimi_definition
+        evidence:
+          - "we introduce Mimi, a neural audio codec"
+          - "We discretize the latent space with a Residual Vector Quantizer"
+  
+  - id: q11
+    text: "What are the two complementary components of the dynamic chunking mechanism in H-Net?"
+    answerable: true
+    category: single-fact
+    gold:
+      - paper: dynamic-chunking
+        pages: [2]
+        evidence:
+          - "routing module which predicts boundaries"
+          - "smoothing module which interpolates representations"
+
+  - id: q12
+    text: "Approximately how many bytes does H-Net dynamically compress into each chunk?"
+    answerable: true
+    category: numeric
+    gold:
+      - paper: dynamic-chunking
+        pages: [3]
+        evidence:
+          - "4.5-5 bytes/chunk"
+  
+  - id: q13
+    text: "What does Moshi generate hierarchically, and what does H-Net hierarchically compress?"
+    answerable: true
+    category: cross-paper
+    gold:
+      - paper: moshi
+        pages: [1]
+        evidence:
+          - "hierarchical semantic-to-acoustic token generation"
+      - paper: dynamic-chunking
+        pages: [2]
+        evidence:
+          - "compresses raw data through a recursive, data-dependent dynamic chunking"
+
+  - id: q14
+    text: "What two sublayers make up each Transformer encoder layer, and what kinds of architectures can H-Net use as its main network?"
+    answerable: true
+    category: cross-paper
+    gold:
+      - paper: attention
+        pages: [3]
+        evidence:
+          - "multi-head self-attention mechanism"
+          - "position-wise fully connected feed-forward network"
+      - paper: dynamic-chunking
+        pages: [2]
+        evidence:
+          - "can be any standard architecture"
+          - "Transformer"
+
+  - id: q15
+    text: "Describe the sequence of operations in H-Net, from processing raw input to reconstructing the original-resolution representation."
+    answerable: true
+    category: multi-step
+    gold:
+      - paper: dynamic-chunking
+        pages: [2]
+        evidence:
+          - "raw data is processed by a small encoder network"
+          - "then downsampled and passed through a main network"
+          - "finally upsampled before being passed through a decoder network"
+  
+  - id: q16
+    text: "What is the exact inference latency of GPT-4 when running on the same hardware as Moshi?"
+    answerable: false
+    category: unanswerable
+    gold: []
+
+  - id: q17
+    text: "What is the maximum number of concurrent users supported by the Transformer architecture described in Attention Is All You Need?"
+    answerable: false
+    category: unanswerable
+    gold: []
+
+  - id: q18
+    text: "What is the exact GPU memory consumption of a two-stage H-Net during inference at a context length of one million bytes?"
+    answerable: false
+    category: unanswerable
+    gold: []
+
+  - id: q19
+    text: "Does Moshi achieve higher speech recognition accuracy than Whisper large-v3 on every language, and what is the exact percentage improvement?"
+    answerable: false
+    category: unanswerable
+    gold: []
+
+  - id: q20
+    text: "What is the monetary cost per million generated tokens of training and deploying the Transformer big model?"
+    answerable: false
+    category: unanswerable
+    gold: []

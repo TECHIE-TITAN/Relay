@@ -47,6 +47,19 @@ def test_windows_always_make_progress_even_with_huge_overlap():
     assert starts == sorted(set(starts)) and wins[-1][1] == 5
 
 
+def test_chunks_carry_physical_and_printed_pages_separately():
+    p1 = PageRecord(paper_key="p", page=2, blocks=(Block(" ".join(words("a", 12))),), printed_page="1")
+    p2 = PageRecord(paper_key="p", page=3, blocks=(Block(" ".join(words("b", 12))),), printed_page="2")
+    chunks = build_chunks([p1, p2], setting(30, 0))
+    assert chunks[0].page_start == 2 and chunks[0].printed_start == "1"
+    assert chunks[-1].page_end == 3 and chunks[-1].printed_end == "2"
+    from relay.schema import Chunk
+    assert Chunk.from_dict(chunks[0].to_dict()) == chunks[0]          # round-trips through JSON dicts
+    old = chunks[0].to_dict()
+    old.pop("printed_start"); old.pop("printed_end")                  # files written before this field existed
+    assert Chunk.from_dict(old).printed_start is None
+
+
 def test_short_segment_gives_one_chunk():
     pages = [page(1, [Block(" ".join(words("w", 5)))])]
     chunks = build_chunks(pages, setting(100, 10))

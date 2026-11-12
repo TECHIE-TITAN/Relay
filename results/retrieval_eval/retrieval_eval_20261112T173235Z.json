@@ -1,0 +1,1335 @@
+{
+  "kind": "retrieval_eval",
+  "provenance": "retrieval-only, offline, no model calls",
+  "generated_at": "2026-11-12T17:32:35+00:00",
+  "questions_file": "/Users/harishkumar/Desktop/WORKSPACE/Project_Relay/Relay/data/questions.yaml",
+  "n_questions": 20,
+  "settings": {
+    "S1": {
+      "n_answerable": 15,
+      "n_unanswerable": 5,
+      "hit_any_pct": 40.0,
+      "hit_all_pct": 40.0,
+      "false_abstain_pct": 13.3,
+      "correct_abstain_pct": 80.0,
+      "mean_context_tokens_approx": 764.6,
+      "median_search_ms": 0.171,
+      "max_search_ms": 0.308
+    },
+    "S2": {
+      "n_answerable": 15,
+      "n_unanswerable": 5,
+      "hit_any_pct": 60.0,
+      "hit_all_pct": 60.0,
+      "false_abstain_pct": 6.7,
+      "correct_abstain_pct": 60.0,
+      "mean_context_tokens_approx": 1423.3,
+      "median_search_ms": 0.147,
+      "max_search_ms": 0.247
+    },
+    "S3": {
+      "n_answerable": 15,
+      "n_unanswerable": 5,
+      "hit_any_pct": 66.7,
+      "hit_all_pct": 66.7,
+      "false_abstain_pct": 6.7,
+      "correct_abstain_pct": 60.0,
+      "mean_context_tokens_approx": 1758.2,
+      "median_search_ms": 0.436,
+      "max_search_ms": 0.551
+    },
+    "S4": {
+      "n_answerable": 15,
+      "n_unanswerable": 5,
+      "hit_any_pct": 73.3,
+      "hit_all_pct": 73.3,
+      "false_abstain_pct": 6.7,
+      "correct_abstain_pct": 40.0,
+      "mean_context_tokens_approx": 1909.3,
+      "median_search_ms": 0.096,
+      "max_search_ms": 0.155
+    }
+  },
+  "per_question": [
+    {
+      "setting": "S1",
+      "id": "q01",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.5,
+      "context_tokens_approx": 773,
+      "chunk_ids": [
+        "attention:S1:0008",
+        "dynamic-chunking:S1:0081",
+        "attention:S1:0009"
+      ],
+      "hit_any": true,
+      "hit_all": true
+    },
+    {
+      "setting": "S1",
+      "id": "q02",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.6667,
+      "context_tokens_approx": 770,
+      "chunk_ids": [
+        "attention:S1:0010",
+        "attention:S1:0009",
+        "attention:S1:0011"
+      ],
+      "hit_any": true,
+      "hit_all": true
+    },
+    {
+      "setting": "S1",
+      "id": "q03",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.5833,
+      "context_tokens_approx": 651,
+      "chunk_ids": [
+        "attention:S1:0028",
+        "dynamic-chunking:S1:0115",
+        "attention:S1:0034"
+      ],
+      "hit_any": false,
+      "hit_all": false
+    },
+    {
+      "setting": "S1",
+      "id": "q04",
+      "answerable": true,
+      "abstain": true,
+      "abstain_reason": "low_coverage",
+      "coverage": 0.2222,
+      "context_tokens_approx": 773,
+      "chunk_ids": [
+        "attention:S1:0017",
+        "moshi:S1:0023",
+        "attention:S1:0024"
+      ],
+      "hit_any": false,
+      "hit_all": false
+    },
+    {
+      "setting": "S1",
+      "id": "q05",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.7,
+      "context_tokens_approx": 769,
+      "chunk_ids": [
+        "attention:S1:0025",
+        "attention:S1:0001",
+        "attention:S1:0022"
+      ],
+      "hit_any": true,
+      "hit_all": true
+    },
+    {
+      "setting": "S1",
+      "id": "q06",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.8462,
+      "context_tokens_approx": 770,
+      "chunk_ids": [
+        "attention:S1:0019",
+        "attention:S1:0016",
+        "attention:S1:0018"
+      ],
+      "hit_any": true,
+      "hit_all": true
+    },
+    {
+      "setting": "S1",
+      "id": "q07",
+      "answerable": true,
+      "abstain": true,
+      "abstain_reason": "low_coverage",
+      "coverage": 0.3333,
+      "context_tokens_approx": 768,
+      "chunk_ids": [
+        "moshi:S1:0086",
+        "moshi:S1:0001",
+        "moshi:S1:0085"
+      ],
+      "hit_any": false,
+      "hit_all": false
+    },
+    {
+      "setting": "S1",
+      "id": "q08",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.7273,
+      "context_tokens_approx": 769,
+      "chunk_ids": [
+        "moshi:S1:0001",
+        "moshi:S1:0019",
+        "moshi:S1:0021"
+      ],
+      "hit_any": true,
+      "hit_all": true
+    },
+    {
+      "setting": "S1",
+      "id": "q09",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.8333,
+      "context_tokens_approx": 769,
+      "chunk_ids": [
+        "moshi:S1:0001",
+        "moshi:S1:0138",
+        "moshi:S1:0016"
+      ],
+      "hit_any": true,
+      "hit_all": true
+    },
+    {
+      "setting": "S1",
+      "id": "q10",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.6,
+      "context_tokens_approx": 774,
+      "chunk_ids": [
+        "moshi:S1:0151",
+        "moshi:S1:0033",
+        "moshi:S1:0034"
+      ],
+      "hit_any": false,
+      "hit_all": false
+    },
+    {
+      "setting": "S1",
+      "id": "q11",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.75,
+      "context_tokens_approx": 773,
+      "chunk_ids": [
+        "dynamic-chunking:S1:0010",
+        "dynamic-chunking:S1:0007",
+        "dynamic-chunking:S1:0014"
+      ],
+      "hit_any": false,
+      "hit_all": false
+    },
+    {
+      "setting": "S1",
+      "id": "q12",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.5556,
+      "context_tokens_approx": 769,
+      "chunk_ids": [
+        "dynamic-chunking:S1:0069",
+        "dynamic-chunking:S1:0044",
+        "dynamic-chunking:S1:0089"
+      ],
+      "hit_any": false,
+      "hit_all": false
+    },
+    {
+      "setting": "S1",
+      "id": "q13",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.5,
+      "context_tokens_approx": 770,
+      "chunk_ids": [
+        "moshi:S1:0020",
+        "dynamic-chunking:S1:0069",
+        "dynamic-chunking:S1:0120"
+      ],
+      "hit_any": false,
+      "hit_all": false
+    },
+    {
+      "setting": "S1",
+      "id": "q14",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.6,
+      "context_tokens_approx": 771,
+      "chunk_ids": [
+        "dynamic-chunking:S1:0034",
+        "dynamic-chunking:S1:0021",
+        "dynamic-chunking:S1:0081"
+      ],
+      "hit_any": false,
+      "hit_all": false
+    },
+    {
+      "setting": "S1",
+      "id": "q15",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.5833,
+      "context_tokens_approx": 770,
+      "chunk_ids": [
+        "dynamic-chunking:S1:0016",
+        "attention:S1:0006",
+        "dynamic-chunking:S1:0099"
+      ],
+      "hit_any": false,
+      "hit_all": false
+    },
+    {
+      "setting": "S1",
+      "id": "q16",
+      "answerable": false,
+      "abstain": true,
+      "abstain_reason": "low_coverage",
+      "coverage": 0.4,
+      "context_tokens_approx": 770,
+      "chunk_ids": [
+        "moshi:S1:0121",
+        "moshi:S1:0106",
+        "dynamic-chunking:S1:0048"
+      ]
+    },
+    {
+      "setting": "S1",
+      "id": "q17",
+      "answerable": false,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.5,
+      "context_tokens_approx": 773,
+      "chunk_ids": [
+        "attention:S1:0000",
+        "attention:S1:0019",
+        "dynamic-chunking:S1:0049"
+      ]
+    },
+    {
+      "setting": "S1",
+      "id": "q18",
+      "answerable": false,
+      "abstain": true,
+      "abstain_reason": "low_coverage",
+      "coverage": 0.4,
+      "context_tokens_approx": 770,
+      "chunk_ids": [
+        "dynamic-chunking:S1:0015",
+        "dynamic-chunking:S1:0085",
+        "dynamic-chunking:S1:0051"
+      ]
+    },
+    {
+      "setting": "S1",
+      "id": "q19",
+      "answerable": false,
+      "abstain": true,
+      "abstain_reason": "low_coverage",
+      "coverage": 0.3571,
+      "context_tokens_approx": 771,
+      "chunk_ids": [
+        "moshi:S1:0057",
+        "moshi:S1:0001",
+        "moshi:S1:0002"
+      ]
+    },
+    {
+      "setting": "S1",
+      "id": "q20",
+      "answerable": false,
+      "abstain": true,
+      "abstain_reason": "low_coverage",
+      "coverage": 0.4545,
+      "context_tokens_approx": 770,
+      "chunk_ids": [
+        "attention:S1:0025",
+        "attention:S1:0023",
+        "attention:S1:0026"
+      ]
+    },
+    {
+      "setting": "S2",
+      "id": "q01",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.5,
+      "context_tokens_approx": 1573,
+      "chunk_ids": [
+        "attention:S2:0006",
+        "dynamic-chunking:S2:0055",
+        "attention:S2:0015",
+        "dynamic-chunking:S2:0011"
+      ],
+      "hit_any": true,
+      "hit_all": true
+    },
+    {
+      "setting": "S2",
+      "id": "q02",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.5833,
+      "context_tokens_approx": 1206,
+      "chunk_ids": [
+        "attention:S2:0008",
+        "attention:S2:0007",
+        "attention:S2:0010",
+        "attention:S2:0001"
+      ],
+      "hit_any": true,
+      "hit_all": true
+    },
+    {
+      "setting": "S2",
+      "id": "q03",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.6667,
+      "context_tokens_approx": 1059,
+      "chunk_ids": [
+        "attention:S2:0022",
+        "dynamic-chunking:S2:0081",
+        "attention:S2:0021",
+        "attention:S2:0007"
+      ],
+      "hit_any": false,
+      "hit_all": false
+    },
+    {
+      "setting": "S2",
+      "id": "q04",
+      "answerable": true,
+      "abstain": true,
+      "abstain_reason": "low_coverage",
+      "coverage": 0.2222,
+      "context_tokens_approx": 1438,
+      "chunk_ids": [
+        "attention:S2:0013",
+        "moshi:S2:0015",
+        "attention:S2:0019",
+        "dynamic-chunking:S2:0073"
+      ],
+      "hit_any": false,
+      "hit_all": false
+    },
+    {
+      "setting": "S2",
+      "id": "q05",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.7,
+      "context_tokens_approx": 1292,
+      "chunk_ids": [
+        "attention:S2:0020",
+        "attention:S2:0001",
+        "attention:S2:0025",
+        "attention:S2:0016"
+      ],
+      "hit_any": true,
+      "hit_all": true
+    },
+    {
+      "setting": "S2",
+      "id": "q06",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.9231,
+      "context_tokens_approx": 1567,
+      "chunk_ids": [
+        "attention:S2:0014",
+        "attention:S2:0012",
+        "attention:S2:0015",
+        "attention:S2:0004"
+      ],
+      "hit_any": true,
+      "hit_all": true
+    },
+    {
+      "setting": "S2",
+      "id": "q07",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.5,
+      "context_tokens_approx": 1323,
+      "chunk_ids": [
+        "moshi:S2:0001",
+        "moshi:S2:0059",
+        "moshi:S2:0060",
+        "moshi:S2:0095"
+      ],
+      "hit_any": true,
+      "hit_all": true
+    },
+    {
+      "setting": "S2",
+      "id": "q08",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.6364,
+      "context_tokens_approx": 1667,
+      "chunk_ids": [
+        "moshi:S2:0013",
+        "moshi:S2:0000",
+        "moshi:S2:0014",
+        "moshi:S2:0012"
+      ],
+      "hit_any": true,
+      "hit_all": true
+    },
+    {
+      "setting": "S2",
+      "id": "q09",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.8333,
+      "context_tokens_approx": 1237,
+      "chunk_ids": [
+        "moshi:S2:0095",
+        "moshi:S2:0001",
+        "moshi:S2:0011",
+        "moshi:S2:0096"
+      ],
+      "hit_any": true,
+      "hit_all": true
+    },
+    {
+      "setting": "S2",
+      "id": "q10",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.6,
+      "context_tokens_approx": 1540,
+      "chunk_ids": [
+        "moshi:S2:0090",
+        "moshi:S2:0022",
+        "moshi:S2:0055",
+        "moshi:S2:0021"
+      ],
+      "hit_any": false,
+      "hit_all": false
+    },
+    {
+      "setting": "S2",
+      "id": "q11",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.75,
+      "context_tokens_approx": 1246,
+      "chunk_ids": [
+        "dynamic-chunking:S2:0007",
+        "dynamic-chunking:S2:0005",
+        "dynamic-chunking:S2:0056",
+        "dynamic-chunking:S2:0010"
+      ],
+      "hit_any": true,
+      "hit_all": true
+    },
+    {
+      "setting": "S2",
+      "id": "q12",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.6667,
+      "context_tokens_approx": 1430,
+      "chunk_ids": [
+        "dynamic-chunking:S2:0030",
+        "dynamic-chunking:S2:0031",
+        "dynamic-chunking:S2:0007",
+        "dynamic-chunking:S2:0012"
+      ],
+      "hit_any": true,
+      "hit_all": true
+    },
+    {
+      "setting": "S2",
+      "id": "q13",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.5,
+      "context_tokens_approx": 1464,
+      "chunk_ids": [
+        "moshi:S2:0013",
+        "dynamic-chunking:S2:0084",
+        "dynamic-chunking:S2:0074",
+        "dynamic-chunking:S2:0047"
+      ],
+      "hit_any": false,
+      "hit_all": false
+    },
+    {
+      "setting": "S2",
+      "id": "q14",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.7333,
+      "context_tokens_approx": 1626,
+      "chunk_ids": [
+        "dynamic-chunking:S2:0030",
+        "dynamic-chunking:S2:0015",
+        "dynamic-chunking:S2:0048",
+        "dynamic-chunking:S2:0024"
+      ],
+      "hit_any": false,
+      "hit_all": false
+    },
+    {
+      "setting": "S2",
+      "id": "q15",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.5833,
+      "context_tokens_approx": 1503,
+      "chunk_ids": [
+        "dynamic-chunking:S2:0012",
+        "attention:S2:0004",
+        "dynamic-chunking:S2:0004",
+        "dynamic-chunking:S2:0070"
+      ],
+      "hit_any": false,
+      "hit_all": false
+    },
+    {
+      "setting": "S2",
+      "id": "q16",
+      "answerable": false,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.5,
+      "context_tokens_approx": 1719,
+      "chunk_ids": [
+        "moshi:S2:0055",
+        "dynamic-chunking:S2:0033",
+        "moshi:S2:0014",
+        "moshi:S2:0013"
+      ]
+    },
+    {
+      "setting": "S2",
+      "id": "q17",
+      "answerable": false,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.5,
+      "context_tokens_approx": 1423,
+      "chunk_ids": [
+        "dynamic-chunking:S2:0033",
+        "attention:S2:0004",
+        "attention:S2:0000",
+        "attention:S2:0014"
+      ]
+    },
+    {
+      "setting": "S2",
+      "id": "q18",
+      "answerable": false,
+      "abstain": true,
+      "abstain_reason": "low_coverage",
+      "coverage": 0.4,
+      "context_tokens_approx": 1539,
+      "chunk_ids": [
+        "dynamic-chunking:S2:0058",
+        "dynamic-chunking:S2:0089",
+        "dynamic-chunking:S2:0011",
+        "dynamic-chunking:S2:0049"
+      ]
+    },
+    {
+      "setting": "S2",
+      "id": "q19",
+      "answerable": false,
+      "abstain": true,
+      "abstain_reason": "low_coverage",
+      "coverage": 0.4286,
+      "context_tokens_approx": 1103,
+      "chunk_ids": [
+        "moshi:S2:0039",
+        "moshi:S2:0001",
+        "moshi:S2:0055",
+        "dynamic-chunking:S2:0083"
+      ]
+    },
+    {
+      "setting": "S2",
+      "id": "q20",
+      "answerable": false,
+      "abstain": true,
+      "abstain_reason": "low_coverage",
+      "coverage": 0.4545,
+      "context_tokens_approx": 1512,
+      "chunk_ids": [
+        "attention:S2:0020",
+        "attention:S2:0019",
+        "moshi:S2:0044",
+        "moshi:S2:0028"
+      ]
+    },
+    {
+      "setting": "S3",
+      "id": "q01",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.5,
+      "context_tokens_approx": 1811,
+      "chunk_ids": [
+        "attention:S3:0005",
+        "dynamic-chunking:S3:0042",
+        "attention:S3:0014",
+        "dynamic-chunking:S3:0011"
+      ],
+      "hit_any": true,
+      "hit_all": true
+    },
+    {
+      "setting": "S3",
+      "id": "q02",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.5833,
+      "context_tokens_approx": 1378,
+      "chunk_ids": [
+        "attention:S3:0007",
+        "attention:S3:0006",
+        "attention:S3:0009",
+        "attention:S3:0001"
+      ],
+      "hit_any": true,
+      "hit_all": true
+    },
+    {
+      "setting": "S3",
+      "id": "q03",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.8333,
+      "context_tokens_approx": 1373,
+      "chunk_ids": [
+        "attention:S3:0020",
+        "dynamic-chunking:S3:0063",
+        "attention:S3:0006",
+        "attention:S3:0008"
+      ],
+      "hit_any": true,
+      "hit_all": true
+    },
+    {
+      "setting": "S3",
+      "id": "q04",
+      "answerable": true,
+      "abstain": true,
+      "abstain_reason": "low_coverage",
+      "coverage": 0.2222,
+      "context_tokens_approx": 1717,
+      "chunk_ids": [
+        "attention:S3:0012",
+        "attention:S3:0018",
+        "moshi:S3:0012",
+        "attention:S3:0020"
+      ],
+      "hit_any": false,
+      "hit_all": false
+    },
+    {
+      "setting": "S3",
+      "id": "q05",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.7,
+      "context_tokens_approx": 1464,
+      "chunk_ids": [
+        "attention:S3:0019",
+        "attention:S3:0001",
+        "attention:S3:0015",
+        "attention:S3:0022"
+      ],
+      "hit_any": true,
+      "hit_all": true
+    },
+    {
+      "setting": "S3",
+      "id": "q06",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.9231,
+      "context_tokens_approx": 1584,
+      "chunk_ids": [
+        "attention:S3:0013",
+        "attention:S3:0011",
+        "attention:S3:0003",
+        "attention:S3:0014"
+      ],
+      "hit_any": true,
+      "hit_all": true
+    },
+    {
+      "setting": "S3",
+      "id": "q07",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.8333,
+      "context_tokens_approx": 2140,
+      "chunk_ids": [
+        "moshi:S3:0044",
+        "moshi:S3:0000",
+        "moshi:S3:0045",
+        "moshi:S3:0002"
+      ],
+      "hit_any": true,
+      "hit_all": true
+    },
+    {
+      "setting": "S3",
+      "id": "q08",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.7273,
+      "context_tokens_approx": 1703,
+      "chunk_ids": [
+        "moshi:S3:0000",
+        "moshi:S3:0009",
+        "moshi:S3:0011",
+        "moshi:S3:0010"
+      ],
+      "hit_any": true,
+      "hit_all": true
+    },
+    {
+      "setting": "S3",
+      "id": "q09",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.8333,
+      "context_tokens_approx": 2047,
+      "chunk_ids": [
+        "moshi:S3:0071",
+        "moshi:S3:0008",
+        "moshi:S3:0000",
+        "moshi:S3:0004"
+      ],
+      "hit_any": true,
+      "hit_all": true
+    },
+    {
+      "setting": "S3",
+      "id": "q10",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.6,
+      "context_tokens_approx": 1758,
+      "chunk_ids": [
+        "moshi:S3:0078",
+        "moshi:S3:0055",
+        "moshi:S3:0017",
+        "moshi:S3:0067"
+      ],
+      "hit_any": false,
+      "hit_all": false
+    },
+    {
+      "setting": "S3",
+      "id": "q11",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.875,
+      "context_tokens_approx": 1612,
+      "chunk_ids": [
+        "dynamic-chunking:S3:0004",
+        "dynamic-chunking:S3:0005",
+        "dynamic-chunking:S3:0008",
+        "dynamic-chunking:S3:0043"
+      ],
+      "hit_any": true,
+      "hit_all": true
+    },
+    {
+      "setting": "S3",
+      "id": "q12",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.6667,
+      "context_tokens_approx": 1869,
+      "chunk_ids": [
+        "dynamic-chunking:S3:0005",
+        "dynamic-chunking:S3:0024",
+        "dynamic-chunking:S3:0009",
+        "dynamic-chunking:S3:0074"
+      ],
+      "hit_any": false,
+      "hit_all": false
+    },
+    {
+      "setting": "S3",
+      "id": "q13",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.5,
+      "context_tokens_approx": 1596,
+      "chunk_ids": [
+        "moshi:S3:0010",
+        "dynamic-chunking:S3:0066",
+        "dynamic-chunking:S3:0056",
+        "dynamic-chunking:S3:0036"
+      ],
+      "hit_any": false,
+      "hit_all": false
+    },
+    {
+      "setting": "S3",
+      "id": "q14",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.7333,
+      "context_tokens_approx": 2204,
+      "chunk_ids": [
+        "dynamic-chunking:S3:0011",
+        "dynamic-chunking:S3:0018",
+        "dynamic-chunking:S3:0037",
+        "dynamic-chunking:S3:0009"
+      ],
+      "hit_any": false,
+      "hit_all": false
+    },
+    {
+      "setting": "S3",
+      "id": "q15",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.5,
+      "context_tokens_approx": 2094,
+      "chunk_ids": [
+        "attention:S3:0003",
+        "dynamic-chunking:S3:0009",
+        "dynamic-chunking:S3:0006",
+        "dynamic-chunking:S3:0004"
+      ],
+      "hit_any": true,
+      "hit_all": true
+    },
+    {
+      "setting": "S3",
+      "id": "q16",
+      "answerable": false,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.5,
+      "context_tokens_approx": 1972,
+      "chunk_ids": [
+        "moshi:S3:0044",
+        "moshi:S3:0009",
+        "moshi:S3:0042",
+        "dynamic-chunking:S3:0026"
+      ]
+    },
+    {
+      "setting": "S3",
+      "id": "q17",
+      "answerable": false,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.5,
+      "context_tokens_approx": 1548,
+      "chunk_ids": [
+        "dynamic-chunking:S3:0026",
+        "attention:S3:0000",
+        "attention:S3:0003",
+        "attention:S3:0013"
+      ]
+    },
+    {
+      "setting": "S3",
+      "id": "q18",
+      "answerable": false,
+      "abstain": true,
+      "abstain_reason": "low_coverage",
+      "coverage": 0.4667,
+      "context_tokens_approx": 2152,
+      "chunk_ids": [
+        "dynamic-chunking:S3:0009",
+        "dynamic-chunking:S3:0044",
+        "dynamic-chunking:S3:0038",
+        "dynamic-chunking:S3:0036"
+      ]
+    },
+    {
+      "setting": "S3",
+      "id": "q19",
+      "answerable": false,
+      "abstain": true,
+      "abstain_reason": "low_coverage",
+      "coverage": 0.4286,
+      "context_tokens_approx": 1713,
+      "chunk_ids": [
+        "moshi:S3:0030",
+        "moshi:S3:0000",
+        "moshi:S3:0042",
+        "dynamic-chunking:S3:0065"
+      ]
+    },
+    {
+      "setting": "S3",
+      "id": "q20",
+      "answerable": false,
+      "abstain": true,
+      "abstain_reason": "low_coverage",
+      "coverage": 0.4545,
+      "context_tokens_approx": 1428,
+      "chunk_ids": [
+        "attention:S3:0019",
+        "attention:S3:0018",
+        "attention:S3:0015",
+        "moshi:S3:0034"
+      ]
+    },
+    {
+      "setting": "S4",
+      "id": "q01",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.5,
+      "context_tokens_approx": 1732,
+      "chunk_ids": [
+        "attention:S4:0005",
+        "attention:S4:0013",
+        "dynamic-chunking:S4:0024"
+      ],
+      "hit_any": true,
+      "hit_all": true
+    },
+    {
+      "setting": "S4",
+      "id": "q02",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.5833,
+      "context_tokens_approx": 821,
+      "chunk_ids": [
+        "attention:S4:0007",
+        "attention:S4:0006",
+        "attention:S4:0009"
+      ],
+      "hit_any": true,
+      "hit_all": true
+    },
+    {
+      "setting": "S4",
+      "id": "q03",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.8333,
+      "context_tokens_approx": 1239,
+      "chunk_ids": [
+        "attention:S4:0019",
+        "dynamic-chunking:S4:0037",
+        "attention:S4:0008"
+      ],
+      "hit_any": true,
+      "hit_all": true
+    },
+    {
+      "setting": "S4",
+      "id": "q04",
+      "answerable": true,
+      "abstain": true,
+      "abstain_reason": "low_coverage",
+      "coverage": 0.2222,
+      "context_tokens_approx": 1204,
+      "chunk_ids": [
+        "attention:S4:0012",
+        "attention:S4:0017",
+        "attention:S4:0019"
+      ],
+      "hit_any": false,
+      "hit_all": false
+    },
+    {
+      "setting": "S4",
+      "id": "q05",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.7,
+      "context_tokens_approx": 1291,
+      "chunk_ids": [
+        "attention:S4:0018",
+        "attention:S4:0001",
+        "attention:S4:0021"
+      ],
+      "hit_any": true,
+      "hit_all": true
+    },
+    {
+      "setting": "S4",
+      "id": "q06",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.8462,
+      "context_tokens_approx": 1518,
+      "chunk_ids": [
+        "attention:S4:0011",
+        "attention:S4:0013",
+        "attention:S4:0003"
+      ],
+      "hit_any": true,
+      "hit_all": true
+    },
+    {
+      "setting": "S4",
+      "id": "q07",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.8333,
+      "context_tokens_approx": 2587,
+      "chunk_ids": [
+        "moshi:S4:0024",
+        "moshi:S4:0000",
+        "moshi:S4:0001"
+      ],
+      "hit_any": true,
+      "hit_all": true
+    },
+    {
+      "setting": "S4",
+      "id": "q08",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.7273,
+      "context_tokens_approx": 1374,
+      "chunk_ids": [
+        "moshi:S4:0000",
+        "moshi:S4:0005",
+        "moshi:S4:0006"
+      ],
+      "hit_any": true,
+      "hit_all": true
+    },
+    {
+      "setting": "S4",
+      "id": "q09",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.8333,
+      "context_tokens_approx": 2164,
+      "chunk_ids": [
+        "moshi:S4:0039",
+        "moshi:S4:0000",
+        "moshi:S4:0004"
+      ],
+      "hit_any": true,
+      "hit_all": true
+    },
+    {
+      "setting": "S4",
+      "id": "q10",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.8,
+      "context_tokens_approx": 2921,
+      "chunk_ids": [
+        "moshi:S4:0030",
+        "moshi:S4:0010",
+        "moshi:S4:0023"
+      ],
+      "hit_any": false,
+      "hit_all": false
+    },
+    {
+      "setting": "S4",
+      "id": "q11",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 1.0,
+      "context_tokens_approx": 1803,
+      "chunk_ids": [
+        "dynamic-chunking:S4:0003",
+        "dynamic-chunking:S4:0005",
+        "dynamic-chunking:S4:0024"
+      ],
+      "hit_any": true,
+      "hit_all": true
+    },
+    {
+      "setting": "S4",
+      "id": "q12",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.7778,
+      "context_tokens_approx": 2844,
+      "chunk_ids": [
+        "dynamic-chunking:S4:0003",
+        "dynamic-chunking:S4:0015",
+        "dynamic-chunking:S4:0021"
+      ],
+      "hit_any": true,
+      "hit_all": true
+    },
+    {
+      "setting": "S4",
+      "id": "q13",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.5,
+      "context_tokens_approx": 1795,
+      "chunk_ids": [
+        "moshi:S4:0005",
+        "dynamic-chunking:S4:0040",
+        "dynamic-chunking:S4:0023"
+      ],
+      "hit_any": false,
+      "hit_all": false
+    },
+    {
+      "setting": "S4",
+      "id": "q14",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.7333,
+      "context_tokens_approx": 2966,
+      "chunk_ids": [
+        "dynamic-chunking:S4:0007",
+        "dynamic-chunking:S4:0021",
+        "dynamic-chunking:S4:0013"
+      ],
+      "hit_any": false,
+      "hit_all": false
+    },
+    {
+      "setting": "S4",
+      "id": "q15",
+      "answerable": true,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.5833,
+      "context_tokens_approx": 2094,
+      "chunk_ids": [
+        "dynamic-chunking:S4:0006",
+        "attention:S4:0003",
+        "dynamic-chunking:S4:0003"
+      ],
+      "hit_any": true,
+      "hit_all": true
+    },
+    {
+      "setting": "S4",
+      "id": "q16",
+      "answerable": false,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.5,
+      "context_tokens_approx": 2831,
+      "chunk_ids": [
+        "moshi:S4:0024",
+        "dynamic-chunking:S4:0016",
+        "moshi:S4:0030"
+      ]
+    },
+    {
+      "setting": "S4",
+      "id": "q17",
+      "answerable": false,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.5,
+      "context_tokens_approx": 1357,
+      "chunk_ids": [
+        "dynamic-chunking:S4:0016",
+        "attention:S4:0000",
+        "attention:S4:0003"
+      ]
+    },
+    {
+      "setting": "S4",
+      "id": "q18",
+      "answerable": false,
+      "abstain": false,
+      "abstain_reason": null,
+      "coverage": 0.6667,
+      "context_tokens_approx": 2664,
+      "chunk_ids": [
+        "dynamic-chunking:S4:0025",
+        "dynamic-chunking:S4:0006",
+        "dynamic-chunking:S4:0044"
+      ]
+    },
+    {
+      "setting": "S4",
+      "id": "q19",
+      "answerable": false,
+      "abstain": true,
+      "abstain_reason": "low_coverage",
+      "coverage": 0.4286,
+      "context_tokens_approx": 2067,
+      "chunk_ids": [
+        "moshi:S4:0017",
+        "moshi:S4:0000",
+        "moshi:S4:0014"
+      ]
+    },
+    {
+      "setting": "S4",
+      "id": "q20",
+      "answerable": false,
+      "abstain": true,
+      "abstain_reason": "low_coverage",
+      "coverage": 0.4545,
+      "context_tokens_approx": 915,
+      "chunk_ids": [
+        "attention:S4:0018",
+        "attention:S4:0017",
+        "attention:S4:0014"
+      ]
+    }
+  ]
+}
