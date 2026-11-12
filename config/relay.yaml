@@ -1,0 +1,58 @@
+# Runtime configuration for The Relay (Phase 0/1 sections only).
+# Limit values do NOT live here: they live in config/limits.yaml with provenance.
+
+project:
+  name: relay
+  schema_version: 1
+
+paths:                      # relative to the project root
+  papers_dir: data/papers
+  processed_dir: data/processed
+  manifest: data/manifest.json
+  limits: config/limits.yaml
+  results_dir: results
+  questions: data/questions.yaml
+
+# The three papers, at exactly the versions the brief requires.
+papers:
+  - key: attention
+    arxiv_id: "1706.03762"
+    version: 7
+    title: "Attention Is All You Need"
+  - key: moshi
+    arxiv_id: "2410.00037"
+    version: 1
+    title: "Moshi: a speech-text foundation model for real-time dialogue"
+  - key: dynamic-chunking
+    arxiv_id: "2507.07955"
+    version: 2
+    title: "Dynamic Chunking for End-to-End Hierarchical Sequence Modeling"
+
+# Model registry. Only the primary model is used; other entries are an
+# extension point (add a block here plus its limits in limits.yaml).
+# Prices are DOCUMENTED (Groq models page, read 2026-11-12) and notional: the
+# free tier costs nothing, so "cost" in results means "at on-demand prices".
+models:
+  primary: openai/gpt-oss-20b
+  registry:
+    openai/gpt-oss-20b:
+      provider: groq
+      base_url: https://api.groq.com/openai/v1
+      limits_key: openai/gpt-oss-20b     # key under account_limits.models in limits.yaml
+      price_in_per_mtok: 0.075
+      price_out_per_mtok: 0.30
+      price_provenance: DOCUMENTED
+
+retrieval:
+  default_setting: S2
+  # Abstain when the best hit contains fewer than this fraction of the distinct
+  # query terms. Starting value, to be calibrated with `eval-retrieval`.
+  abstain_min_coverage: 0.5
+  mmr_lambda: 0.7           # relevance weight when rerank is "mmr" (1.0 = no diversity)
+  # chunk_tokens / overlap_tokens are APPROXIMATE tokens (characters / 4).
+  # rerank: none | mmr. fetch_k candidates are fetched, k are kept.
+  settings:
+    S1: {chunk_tokens: 256,  overlap_tokens: 32, k: 3, fetch_k: 3, rerank: none, section_aware: false}
+    S2: {chunk_tokens: 384,  overlap_tokens: 48, k: 4, fetch_k: 4, rerank: none, section_aware: true}
+    S3: {chunk_tokens: 512,  overlap_tokens: 64, k: 4, fetch_k: 8, rerank: mmr,  section_aware: true}
+    S4: {chunk_tokens: 1024, overlap_tokens: 0,  k: 3, fetch_k: 3, rerank: none, section_aware: true}

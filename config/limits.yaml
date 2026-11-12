@@ -1,0 +1,119 @@
+# Limits registry. Single source of truth (DESIGN.md section 4.4).
+# Provenance labels: DOCUMENTED | OBSERVED-REPORTED | OBSERVED-TRIGGERED | SIMULATED
+#
+# Everything below is DOCUMENTED, read on 2026-11-12 from public Groq docs by
+# a page-fetch agent (text was extracted and summarised by a model, not copied
+# by hand). Confidence is therefore MEDIUM until cross-checked by a human
+# against the page and the account's own console Limits page.
+# No API quota was used to produce this file. Nothing here is OBSERVED yet.
+
+sources:
+  rate_limits: https://console.groq.com/docs/rate-limits   # undated, no version shown
+  errors:      https://console.groq.com/docs/errors
+  models:      https://console.groq.com/docs/models
+  api_ref:     https://console.groq.com/docs/api-reference#chat-create
+  text_chat:   https://console.groq.com/docs/text-chat
+  pricing_page: https://groq.com/pricing   # marketing page, no price table extracted
+  account_limits: https://console.groq.com/settings/limits   # needs login; owner must read it
+
+# ---- RESOLVED 2026-11-12: plan question ---------------------------------------
+# The owner pasted their console "Current Limits" page; it matches the rows
+# below for every model both cover. So these ARE this account's limits.
+# Full snapshot: config/account_limits_2026-11-12.md (account_limits below).
+# The models page still shows different per-model figures (e.g. gpt-oss-120b
+# 250K TPM) under "DEVELOPER PLAN": a different plan, ignore for planning.
+
+candidate_limits:   # per model: RPM / RPD / TPM / TPD
+  openai/gpt-oss-120b:         {rpm: 30, rpd: 1000,  tpm: 8000, tpd: 200000, provenance: DOCUMENTED, plan_label: this-account}
+  openai/gpt-oss-20b:          {rpm: 30, rpd: 1000,  tpm: 8000, tpd: 200000, provenance: DOCUMENTED, plan_label: this-account}
+  openai/gpt-oss-safeguard-20b: {rpm: 3, rpd: 1000,  tpm: 2000, tpd: 200000, provenance: DOCUMENTED, plan_label: this-account}
+  qwen/qwen3.8-27b:            {rpm: 30, rpd: 1000,  tpm: 8000, tpd: 200000, provenance: DOCUMENTED, plan_label: this-account}
+  meta-llama/llama-prompt-guard-2-22m: {rpm: 30, rpd: 14400, tpm: 15000, tpd: 500000, provenance: DOCUMENTED, plan_label: this-account}
+  meta-llama/llama-prompt-guard-2-86m: {rpm: 30, rpd: 14400, tpm: 15000, tpd: 500000, provenance: DOCUMENTED, plan_label: this-account}
+  # llama-3.1-8b-instant and llama-3.3-70b-versatile are listed as production
+  # models on the models page but were NOT in the extracted rate-limit table.
+  # Their limits are: not stated in what was extracted.
+
+# ---- Counting and semantics -------------------------------------------------
+semantics:
+  limit_types: [RPM, RPD, TPM, TPD, ASH, ASD, ITPM, OTPM]
+  applies_at: organization level, not per user
+  binding: "you can hit any limit type depending on which threshold you reach first"
+  cached_tokens_count_toward_limits: false      # DOCUMENTED
+  max_tokens_counted_up_front: not stated on page
+  window_fixed_or_rolling: not stated on page
+  requests_in_flight_limit: not stated on page
+  failed_or_retried_requests_counted: not stated on page
+  limits_may_change_without_notice: not stated on page   # brief says they may; docs say "exceptions"
+
+# ---- Response headers (DOCUMENTED; values on the page are "illustrative") ---
+headers:
+  retry-after:                  {meaning: seconds, when: "only on 429"}
+  x-ratelimit-limit-requests:   {refers_to: RPD, example: 14400}
+  x-ratelimit-remaining-requests: {refers_to: RPD, example: 14370}
+  x-ratelimit-reset-requests:   {refers_to: RPD, example: "2m59.56s", format: duration string}
+  x-ratelimit-limit-tokens:     {refers_to: TPM, example: 18000}
+  x-ratelimit-remaining-tokens: {refers_to: TPM, example: 17997}
+  x-ratelimit-reset-tokens:     {refers_to: TPM, example: "7.66s", format: duration string}
+  consequence: >
+    No header reports RPM or TPD. The per-minute request limit can only be
+    DOCUMENTED or OBSERVED-TRIGGERED. RPD and TPM can be OBSERVED-REPORTED.
+
+# ---- Errors ------------------------------------------------------------------
+errors:
+  rate_limit_status: 429
+  body_shape: {error: {message: string, type: string}}   # only shape shown
+  code_field: not documented
+  minute_vs_day_distinguishable: not stated on page
+  retry_guidance_for_429: "Implement request throttling and respect rate limits."
+  other_codes: {413: too large, 498: flex tier capacity exceeded, 500/502/503: server errors, 424: failed dependency}
+  server_errors_billed: false     # "You will not be charged for requests that return server error codes."
+  mid_stream_errors: not stated on page
+
+# ---- API shape ---------------------------------------------------------------
+api:
+  endpoint: https://api.groq.com/openai/v1/chat/completions
+  openai_compatible: not stated on the pages read (path suggests it; unconfirmed)
+  streaming: {param: stream, terminator: "data: [DONE]"}
+  stream_usage_location: not stated on page
+  stream_options_include_usage: not stated on page
+  nonstream_usage_fields: [queue_time, prompt_tokens, prompt_time, completion_tokens, completion_time, total_tokens, total_time]
+  timing_units: not stated (values look like seconds)
+  output_limit_param: {preferred: max_completion_tokens, deprecated: max_tokens}
+  n: only 1 supported
+  seed: best effort, not guaranteed
+
+# ---- Models and notional prices (per 1M tokens, DOCUMENTED) ------------------
+models:
+  openai/gpt-oss-20b:  {context: 131072, max_completion: 65536, speed_tps: 1000, price_in: 0.075, price_out: 0.30}
+  openai/gpt-oss-120b: {context: 131072, max_completion: 65536, speed_tps: 500,  price_in: 0.15,  price_out: 0.60}
+  llama-3.1-8b-instant:    {context: 131072, max_completion: 131072, speed_tps: 560, price: "ContactSales on page, no number"}
+  llama-3.3-70b-versatile: {context: 131072, max_completion: 32768,  speed_tps: 280, price: "ContactSales on page, no number"}
+  qwen/qwen3.8-27b:    {status: preview, context: 131072, max_completion: 16384, price_in: 0.80, price_out: 4.00}
+  note: >
+    Preview models "may be discontinued at short notice". Free-tier status of
+    each model: not stated on the pages read. The text-chat page's example
+    comment says "up to 2048 tokens shared between prompt and completion",
+    which conflicts with the models table; unreconciled.
+
+# ---- This account's console Limits page (DOCUMENTED, supplied by owner) -------
+# Source file: config/account_limits_2026-11-12.md. Chat models only.
+account_limits:
+  captured: 2026-11-12
+  provenance: DOCUMENTED         # provider's account console; NOT observed
+  confidence: high               # copied by the owner directly from the console
+  models:
+    allam-2-7b:                    {rpm: 30, rpd: 7000,  tpm: 6000,  tpd: 500000}
+    openai/gpt-oss-20b:            {rpm: 30, rpd: 1000,  tpm: 8000,  tpd: 200000}
+    openai/gpt-oss-120b:           {rpm: 30, rpd: 1000,  tpm: 8000,  tpd: 200000}
+    qwen/qwen3.8-27b:              {rpm: 30, rpd: 1000,  tpm: 8000,  tpd: 200000}
+    openai/gpt-oss-safeguard-20b:  {rpm: 3,  rpd: 1000,  tpm: 2000,  tpd: 200000}
+    meta-llama/llama-prompt-guard-2-22m: {rpm: 30, rpd: 14400, tpm: 15000, tpd: 500000}
+    meta-llama/llama-prompt-guard-2-86m: {rpm: 30, rpd: 14400, tpm: 15000, tpd: 500000}
+  not_available_to_account: [llama-3.1-8b-instant, llama-3.3-70b-versatile]
+  derived:                        # arithmetic on the numbers above, not measurements
+    breakeven_tokens_per_request_minute: {gpt-oss: 267, allam-2-7b: 200}   # TPM/RPM; calls larger than this hit TPM before RPM
+    breakeven_tokens_per_request_day:    {gpt-oss: 200, allam-2-7b: 71}    # TPD/RPD; larger calls hit TPD before RPD
+
+observed: {}      # empty on purpose. Filled only from results/probe_real.jsonl.
+simulated: {}     # empty on purpose. Filled only from stand-in config.

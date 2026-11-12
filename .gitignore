@@ -1,0 +1,22 @@
+# Secrets
+.env
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Downloaded papers are reproducible from data/manifest.json (checksums + versions)
+data/papers/
+*.part
+
+# Node (dashboard, later)
+node_modules/
+dashboard/dist/
+
+# OS
+.DS_Store

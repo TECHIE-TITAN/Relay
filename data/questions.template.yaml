@@ -1,0 +1,34 @@
+# TEMPLATE. Copy this file to data/questions.yaml and write YOUR OWN questions.
+# The brief requires at least 15 questions "you wrote yourself". Nothing in this
+# file is real content: every entry below is a placeholder showing the format.
+#
+# Suggested mix (about 20 total): single-fact, numeric/table, cross-paper,
+# multi-step, and several questions the papers do NOT answer (unanswerable),
+# including plausible-sounding ones that tempt a retriever to bluff.
+#
+# Gold entries say where the answer lives:
+#   paper:    attention | moshi | dynamic-chunking
+#   pages:    PDF page indexes (1-based, as shown by `python -m relay.cli inspect`)
+#   evidence: phrases that must ALL occur in the chunk (case and punctuation ignored)
+# Give `pages`, `evidence`, or both. An answerable question needs at least one
+# gold entry; an unanswerable question must have none.
+#
+# Check your gold labels by reading the paper, not by running the retriever:
+# a label copied from retriever output would make the evaluation circular.
+
+version: 1
+questions:
+  - id: q01
+    text: "REPLACE: an answerable question in your own words"
+    answerable: true
+    category: single-fact          # free text: single-fact | numeric | cross-paper | multi-step | trap
+    gold:
+      - paper: attention
+        pages: [1]                 # REPLACE with the real page(s)
+        evidence: ["REPLACE with a phrase from the paper"]
+
+  - id: q02
+    text: "REPLACE: a question the papers do not answer"
+    answerable: false
+    category: unanswerable
+    gold: []
