@@ -10,7 +10,7 @@ Model limits come from the `account_limits.models` section of limits.yaml
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
@@ -63,6 +63,10 @@ class ModelSpec:
     price_in_per_mtok: Optional[float]
     price_out_per_mtok: Optional[float]
     price_provenance: str
+    # Extra request-body parameters for this model (for example reasoning_effort).
+    # Whether the provider accepts them is NOT documented in limits.yaml; the first
+    # real call is what tells us.
+    extra_params: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -278,6 +282,7 @@ def load_config(root: Optional[Path | str] = None) -> Config:
             price_in_per_mtok=spec.get("price_in_per_mtok"),
             price_out_per_mtok=spec.get("price_out_per_mtok"),
             price_provenance=str(spec.get("price_provenance", "not stated")),
+            extra_params=dict(spec.get("extra_params") or {}),
         )
     if primary not in models:
         raise ConfigError(f"models.primary '{primary}' is not in models.registry {sorted(models)}")

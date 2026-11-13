@@ -42,6 +42,10 @@ models:
       price_in_per_mtok: 0.075
       price_out_per_mtok: 0.30
       price_provenance: DOCUMENTED
+      # Request-body extras. ASSUMPTION, not verified: gpt-oss is a reasoning model and
+      # reasoning tokens count toward completion tokens, so "low" keeps answers cheap.
+      # If the first real call rejects this parameter, delete the line.
+      extra_params: {reasoning_effort: low}
 
 retrieval:
   default_setting: S2
