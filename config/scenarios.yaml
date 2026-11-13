@@ -139,11 +139,11 @@ scenarios:
     max_requests: 20
     gateway: {call_timeout_s: 40.0, first_token_timeout_s: 30.0}
   quality_measure:
-    description: "PILOT: q01 (single fact), q16 (unanswerable), q13 (cross-paper) on the real model, S2 only, no retries. Sizes the quality runs; not a result."
+    description: "PILOT: q01 and q08 (single-fact, full evidence retrieved under S2) plus q16 (unanswerable; abstains for free) on the real model, S2 only, no retries. Sizes the quality runs; not a result. q13 is kept for a separate cross-paper retrieval experiment."
     source: real
     kind: sequential
     setting: S2
-    question_ids: [q01, q16, q13]
+    question_ids: [q01, q16, q08]
     deadline_s: 90
     limits_scale: 1
     max_requests: 3
