@@ -174,6 +174,80 @@ def test_real_429_shape_without_token_headers_leaves_the_window_alone_and_still_
     assert not events_named(log, "header_sync")
 
 
+def test_pilot_cap_checks_spent_plus_full_reservation_before_every_call():
+    client = FakeClient([ok_result(tin=60, tout=40), ok_result(tin=60, tout=40), ok_result(tin=60, tout=40)])
+    gw, log, outs, _ = run_call(client, cfg(pilot_token_cap=250), n=3)
+    # reservation per call is the prompt estimate + max_tokens 50 (about 90); each call actually used 100
+    assert [o.ok for o in outs] == [True, True, False]
+    assert outs[2].failure == "pilot_cap" and len(client.calls) == 2         # the third call was never sent
+    assert gw.pilot_spent == 200
+    chk = events_named(log, "cap_check")[0]
+    assert chk["cap"] == "pilot" and chk["spent"] == 200 and chk["spent"] + chk["reserved"] > 250
+
+
+def _concurrent_cap_run(*, pilot_cap=None, ledger=None, n=4):
+    """n requests start together, each call takes 0.2 s, so every reservation is outstanding at once."""
+    import json as _json
+    from relay.textutil import approx_tokens
+    reserved = approx_tokens(_json.dumps(MSGS)) + 50                     # what one call reserves
+    client = FakeClient([(0.2, ok_result(tin=60, tout=40))] * n)
+
+    async def go():
+        log = EventLog(None)
+        gw = Gateway(client, cfg(pilot_token_cap=pilot_cap(reserved) if pilot_cap else None), log,
+                     ledger=ledger(reserved) if ledger else None)
+        ctxs = [ctx_for(log, rid=f"r{i}") for i in range(n)]
+        outs = await asyncio.gather(*[gw.call(c, MSGS, max_tokens=50, purpose="draft") for c in ctxs])
+        return gw, log, outs
+    gw, log, outs = asyncio.run(go())
+    return gw, log, outs, client, reserved
+
+
+def test_concurrent_calls_cannot_jointly_exceed_the_pilot_cap():
+    # room for two full reservations (2.5 x one call), but four requests arrive at once
+    gw, log, outs, client, reserved = _concurrent_cap_run(pilot_cap=lambda r: int(2.5 * r))
+    assert sorted(o.ok for o in outs) == [False, False, True, True]
+    assert len(client.calls) == 2                                          # the other two were never sent
+    assert all(o.failure == "pilot_cap" for o in outs if not o.ok)
+    assert gw._held == 0                                                   # every hold was released
+    refused = [e for e in events_named(log, "cap_check") if e["cap"] == "pilot"]
+    assert len(refused) == 2 and all(e["outstanding"] == 2 * reserved for e in refused)
+
+
+def test_concurrent_calls_cannot_jointly_exceed_the_daily_ledger_cap():
+    gw, log, outs, client, reserved = _concurrent_cap_run(ledger=lambda r: DailyLedger(int(2.5 * r), 1000))
+    assert sorted(o.ok for o in outs) == [False, False, True, True] and len(client.calls) == 2
+    assert all(o.failure == "ledger_cap" for o in outs if not o.ok)
+    assert gw._held == 0 and gw.ledger.tokens == 200                       # actual spend only, no leftover holds
+
+
+def test_a_hold_is_released_when_an_in_flight_call_is_cancelled():
+    async def go():
+        log = EventLog(None)
+        gw = Gateway(FakeClient([(5.0, ok_result())]), cfg(pilot_token_cap=100000), log)
+        task = asyncio.ensure_future(gw.call(ctx_for(log, deadline_s=30.0), MSGS, max_tokens=50, purpose="draft"))
+        await asyncio.sleep(0.05)
+        held_in_flight = gw._held
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        return held_in_flight, gw._held
+    in_flight, after = asyncio.run(go())
+    assert in_flight > 0 and after == 0
+
+
+def test_daily_ledger_cap_is_checked_against_the_full_reservation_too():
+    ledger = DailyLedger(token_cap=100, request_cap=100)
+    ledger.tokens = 50                          # 50 spent, but the next call would reserve about 90 more
+    client = FakeClient([ok_result()])
+    gw, log, (out,), _ = run_call(client, cfg(), ledger=ledger)
+    assert not out.ok and out.failure == "ledger_cap" and len(client.calls) == 0
+    assert events_named(log, "cap_check")[0]["cap"] == "daily_ledger"
+    assert status_for("pilot_cap", None) == "rate_limited" and status_for("ledger_cap", None) == "rate_limited"
+
+
 def test_failed_call_without_usage_is_not_reported_as_provider_tokens():
     client = FakeClient([err_result("timeout"), ok_result(tin=60, tout=40)])
     _, log, (out,), (ctx,) = run_call(client, cfg())

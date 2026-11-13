@@ -54,6 +54,7 @@ class CallResult:
     total_ms: float = 0.0
     headers: dict = field(default_factory=dict)   # x-ratelimit-* and retry-after only
     finish_reason: Optional[str] = None
+    reasoning_tokens: Optional[int] = None   # provider-reported part of tokens_out spent on reasoning, if given
 
 
 @dataclass
@@ -226,11 +227,20 @@ class LLMClient:
             )
         return (0, approx_tokens(st.text), "estimated" if st.text else "none")
 
+    @staticmethod
+    def _reasoning(st: _State) -> Optional[int]:
+        """usage.completion_tokens_details.reasoning_tokens when the provider reports it, else None."""
+        d = (st.usage or {}).get("completion_tokens_details")
+        if isinstance(d, dict) and isinstance(d.get("reasoning_tokens"), int):
+            return int(d["reasoning_tokens"])
+        return None
+
     def _finish(self, st: _State) -> CallResult:
         total = (time.monotonic() - st.t0) * 1000.0
         base = dict(
             status_code=st.status, headers=st.headers, first_byte_ms=self._ms(st, st.first_byte),
             ttft_ms=self._ms(st, st.first_token), total_ms=total, text=st.text, finish_reason=st.finish_reason,
+            reasoning_tokens=self._reasoning(st),
         )
         if st.status != 200:
             return self._http_error(st, base)

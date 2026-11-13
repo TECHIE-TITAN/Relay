@@ -138,6 +138,22 @@ scenarios:
     limits_scale: 1
     max_requests: 20
     gateway: {call_timeout_s: 40.0, first_token_timeout_s: 30.0}
+  quality_measure:
+    description: "PILOT: q01 (single fact), q16 (unanswerable), q13 (cross-paper) on the real model, S2 only, no retries. Sizes the quality runs; not a result."
+    source: real
+    kind: sequential
+    setting: S2
+    question_ids: [q01, q16, q13]
+    deadline_s: 90
+    limits_scale: 1
+    max_requests: 3
+    # Before EVERY model call the gateway checks (tokens spent + that call's full reservation: prompt estimate
+    # + max_tokens 600, about 2.5K for S2) against pilot_token_cap and the daily ledger cap (160K), and refuses
+    # the call if either would be passed. Free refusals make no model call, so they are never checked or charged.
+    # The runner stops the pilot after any call that used more than max_actual_per_call (an estimate that proved wrong).
+    pilot: {max_actual_per_call: 3000}
+    gateway: {call_timeout_s: 40.0, first_token_timeout_s: 30.0, max_retries_per_call: 0, max_attempts_per_request: 1, pilot_token_cap: 6000}
+    pipeline: {regenerate: false}
   quality_S4:
     description: "As quality_S2 with retrieval setting S4."
     source: real

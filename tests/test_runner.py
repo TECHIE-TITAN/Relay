@@ -127,6 +127,35 @@ def test_end_to_end_stand_in_run_writes_the_three_artifacts(live_project, standi
     assert "No quality number" in manifest["note"]
 
 
+def test_sequential_pilot_runs_chosen_questions_in_order_and_stops_before_exceeding_its_cap(live_project, standin_url):
+    cfg = load_config(live_project)
+    base = {**TINY, "name": "pilot", "kind": "sequential", "max_requests": 3, "question_ids": ["q01", "q01", "q01"],
+            "pipeline": {"regenerate": False}}
+    # (a) a cap below one call's full reservation: no call is ever sent, and the refusals are recorded
+    scn = {**base, "pilot": {"max_actual_per_call": 10000},
+           "gateway": {"max_retries_per_call": 0, "max_attempts_per_request": 1, "pilot_token_cap": 100}}
+    asyncio.run(run_scenario(cfg, scn, run_id="pilot_cap_run", standin_url=standin_url))
+    ev = [json.loads(line) for line in run_paths(cfg.paths.results_dir, "pilot_cap_run").events.read_text(encoding="utf-8").splitlines()]
+    assert not any(e["event"] == "send" for e in ev)
+    assert any(e["event"] == "call_failed" and e["failure"] == "pilot_cap" for e in ev)
+    assert any(e["event"] == "cap_check" and e["cap"] == "pilot" and e["reserved"] > 600 for e in ev)
+    # (b) a call that used far more than estimated stops the pilot after that request
+    scn = {**base, "pilot": {"max_actual_per_call": 1}, "gateway": {"max_retries_per_call": 0, "max_attempts_per_request": 1}}
+    res = asyncio.run(run_scenario(cfg, scn, run_id="pilot_actual_run", standin_url=standin_url))
+    ev = [json.loads(line) for line in run_paths(cfg.paths.results_dir, "pilot_actual_run").events.read_text(encoding="utf-8").splitlines()]
+    stops = [e for e in ev if e["event"] == "pilot_stop"]
+    assert res.n_rows == 1 and len(stops) == 1 and stops[0]["reason"] == "actual_usage_above_estimate"
+    ends = [e for e in ev if e["event"] == "call_end"]
+    assert ends and all("reasoning_tokens" in e and e["max_tokens"] == 600 and e["est_prompt_tokens"] > 0 for e in ends)
+
+
+def test_unknown_pilot_question_id_is_rejected_before_anything_runs(live_project, standin_url):
+    cfg = load_config(live_project)
+    scn = {**TINY, "name": "pilot", "kind": "sequential", "max_requests": 1, "question_ids": ["q99"]}
+    with pytest.raises(RelayError, match="q99"):
+        asyncio.run(run_scenario(cfg, scn, run_id="bad_pilot", standin_url=standin_url))
+
+
 def test_a_real_scenario_is_refused_without_allow_real_and_creates_nothing(live_project):
     cfg = load_config(live_project)
     scn = {**TINY, "name": "q", "source": "real", "max_requests": 2, "limits_scale": 1}

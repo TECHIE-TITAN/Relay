@@ -140,7 +140,17 @@ def cmd_chunk(args: argparse.Namespace) -> int:
 def cmd_search(args: argparse.Namespace) -> int:
     cfg = load_config()
     retriever = Retriever.from_config(cfg, args.setting)
-    res = retriever.search(args.query, paper_keys=args.paper, k=args.k)
+    query = args.query
+    if args.question_id:
+        # Take the text straight from the questions file: no quoting or typing errors, and no API call.
+        qs = {q.id: q for q in load_questions(cfg.paths.questions, [p.key for p in cfg.papers])}
+        if args.question_id not in qs:
+            raise RelayError(f"unknown question id '{args.question_id}'")
+        query = qs[args.question_id].text
+        print(f"question {args.question_id}: {query}")
+    if not query:
+        raise RelayError("give a query or --question-id")
+    res = retriever.search(query, paper_keys=args.paper, k=args.k)
     print(f"setting: {retriever.setting.id}   query tokens: {list(res.query_tokens)}")
     print(
         f"coverage: {res.coverage:.2f}   abstain: {'YES (' + str(res.abstain_reason) + ')' if res.abstain else 'no'}"
@@ -404,7 +414,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.set_defaults(func=cmd_chunk)
 
     s = sub.add_parser("search", help="query the chunks")
-    s.add_argument("query")
+    s.add_argument("query", nargs="?", help="query text (or use --question-id)")
+    s.add_argument("--question-id", help="use the text of this question from the questions file (offline, no API)")
     s.add_argument("--setting", help="retrieval setting id (default from config)")
     s.add_argument("--paper", action="append", help="restrict to a paper key (repeatable)")
     s.add_argument("--k", type=int, help="override k")

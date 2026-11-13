@@ -76,6 +76,9 @@ class GatewayConfig:
     breaker_cooldown_s: float = 3.0
     daily_token_cap: int = 160000        # artificial cap (80 % of a 200K day)
     daily_request_cap: int = 800
+    # Optional hard cap on tokens spent by THIS gateway instance (a pilot). A model call is refused when
+    # tokens already spent + its full reservation (prompt estimate + max_tokens) would pass it.
+    pilot_token_cap: Optional[int] = None
 
 
 class LimiterTimeout(Exception):
@@ -198,7 +201,7 @@ def status_for(failure: Optional[str], last_error_kind: Optional[str]) -> str:
     """Map a gateway failure to the brief's status enum. The finer reason stays in the events."""
     if failure == "deadline":                      # no time left to even try
         return "timeout"
-    if failure in ("limiter_timeout", "budget_denied", "daily_exhausted", "too_large"):
+    if failure in ("limiter_timeout", "budget_denied", "daily_exhausted", "too_large", "pilot_cap", "ledger_cap"):
         return "rate_limited"
     kind = last_error_kind or ""
     if kind.startswith("rate_limit"):
@@ -223,6 +226,8 @@ class Gateway:
         self.log = log
         self.clock = clock
         self.ledger = ledger or DailyLedger(cfg.daily_token_cap, cfg.daily_request_cap)
+        self.pilot_spent = 0                # tokens this gateway has actually spent (for pilot_token_cap)
+        self._held = 0                      # full reservations of calls admitted but not yet finished
         self.rng = rng or random.Random(0)
         self.base_rpm = float(cfg.rpm)
         self.base_tpm = float(cfg.tpm)
@@ -405,15 +410,34 @@ class Gateway:
                 return fail("attempt_cap")
             if ctx.remaining() < cfg.reserve_s + min(self._call_est, 1.0):
                 return fail("deadline")
+            # Cap check and hold, as ONE synchronous step (no await between them, so no other request can
+            # interleave): spent + reservations still outstanding for in-flight calls + this call's full
+            # reservation must fit under both caps. The provider charges max_tokens up front.
+            held = self._held
+            if cfg.pilot_token_cap is not None and self.pilot_spent + held + reserved > cfg.pilot_token_cap:
+                ctx.emit("cap_check", cap="pilot", spent=self.pilot_spent, outstanding=held, reserved=reserved,
+                         limit=cfg.pilot_token_cap)
+                return fail("pilot_cap")
+            if self.ledger.tokens + held + reserved > self.ledger.token_cap:
+                ctx.emit("cap_check", cap="daily_ledger", spent=self.ledger.tokens, outstanding=held,
+                         reserved=reserved, limit=self.ledger.token_cap)
+                return fail("ledger_cap")
+            self._held += reserved
             disc = discretionary or retries_here > 0
             try:
                 res = await self._reserve(ctx, reserved, disc)
             except LimiterTimeout:
+                self._held -= reserved
                 return fail("limiter_timeout")
             except BudgetDenied:
+                self._held -= reserved
                 return fail("budget_denied")
             except TooLarge:
+                self._held -= reserved
                 return fail("too_large")
+            except BaseException:
+                self._held -= reserved            # e.g. cancellation while waiting for the limiter
+                raise
 
             ctx.attempts += 1
             attempts_here += 1
@@ -433,6 +457,7 @@ class Gateway:
                                            first_token_timeout_s=ft)
             finally:
                 self.calls_in_flight -= 1
+                self._held -= reserved            # released here; the actual spend is recorded just below, with no await between
 
             tin = r.tokens_in if r.usage_source == "provider" else est_prompt
             tout = r.tokens_out
@@ -453,7 +478,9 @@ class Gateway:
             elif rejected:
                 self.ledger.record(0)                 # counts as a request, no tokens
             else:
-                self.ledger.record(actual if r.ok else max(actual, est_prompt))
+                amount = actual if r.ok else max(actual, est_prompt)
+                self.ledger.record(amount)
+                self.pilot_spent += amount
             if r.ok or r.usage_source == "provider":
                 ctx.tokens_in += tin
                 ctx.tokens_out += tout
@@ -464,7 +491,8 @@ class Gateway:
                      ttft_ms=None if r.ttft_ms is None else round(r.ttft_ms, 1),
                      first_byte_ms=None if r.first_byte_ms is None else round(r.first_byte_ms, 1),
                      tokens_in=tin, tokens_out=tout, usage_source=r.usage_source,
-                     retry_after_s=r.retry_after_s, classified_by=r.classified_by, message=r.message[:160],
+                     reasoning_tokens=r.reasoning_tokens, max_tokens=max_tokens, est_prompt_tokens=est_prompt,
+                     finish_reason=r.finish_reason, retry_after_s=r.retry_after_s, classified_by=r.classified_by, message=r.message[:160],
                      purpose=purpose, discretionary=disc)
             self._sync_headers(ctx, r.headers)
 

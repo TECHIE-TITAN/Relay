@@ -248,6 +248,14 @@ async def run_scenario(cfg: Config, scn: Mapping[str, Any], *, run_id: Optional[
     capacity = capacity_rps(used, float(scn.get("est_tokens_per_answer", 2200)))
     sequential = scn.get("kind") == "sequential"
     order = list(q_all)
+    if scn.get("question_ids"):
+        if not sequential:
+            raise RelayError(f"scenario {name}: question_ids needs kind: sequential")
+        by_id = {q.id: q for q in q_all}
+        missing = [i for i in scn["question_ids"] if i not in by_id]
+        if missing:
+            raise RelayError(f"scenario {name}: unknown question ids {missing}")
+        order = [by_id[i] for i in scn["question_ids"]]      # exactly these, in this order
     if not sequential:
         random.Random(seed).shuffle(order)
         if not scn.get("phases"):
@@ -310,10 +318,22 @@ async def run_scenario(cfg: Config, scn: Mapping[str, Any], *, run_id: Optional[
                 control_tasks.append(asyncio.ensure_future(
                     _control(http, standin_url, float(c["at_s"]), body, t_start, log)))   # type: ignore[arg-type]
         if sequential:
+            pilot = scn.get("pilot") or {}
+            pilot_used = 0
+            # The token caps (pilot_token_cap, daily ledger) are enforced per model call inside the gateway,
+            # against the full reservation. Here we only stop the pilot when a call used far more than estimated.
             for i, q in enumerate(order[:n_planned]):
                 ctx = make_ctx(i, q)
                 log.emit(ctx.request_id, "launch", "launch", lag_ms=0.0)
                 await pipe.handle(ctx, q.text)
+                if pilot:
+                    spent = ctx.tokens_in + ctx.tokens_out + ctx.tokens_unaccounted_est
+                    pilot_used += spent
+                    if spent > int(pilot["max_actual_per_call"]):
+                        log.emit(None, "runner", "pilot_stop", reason="actual_usage_above_estimate", used=pilot_used,
+                                 spent_by_last=spent, limit=int(pilot["max_actual_per_call"]),
+                                 skipped=[x.id for x in order[i + 1:n_planned]])
+                        break
         else:
             for i, at in enumerate(arrivals):
                 delay = t_start + at - clock()
