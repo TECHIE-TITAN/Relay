@@ -137,6 +137,13 @@ def test_apply_writes_only_the_four_values_keeps_the_schema_and_a_backup(tmp_pat
     assert read_results_csv(p)[0]["answer_grade"] == "wrong"
 
 
+def test_prefill_refusals_fills_only_refusals_and_marks_them():
+    rows = build_sheet(MANIFEST, EVENTS, QS, prefill_refusals=True)
+    assert [r["detail_grade"] for r in rows] == ["", "correct_refusal", "wrong_refusal", ""]    # the answer and the failure stay blank
+    assert "auto" in rows[1]["note"] and "auto" in rows[2]["note"] and rows[0]["note"] == ""
+    assert all(r["detail_grade"] == "" for r in build_sheet(MANIFEST, EVENTS, QS))                # off by default
+
+
 def test_a_cap_stop_is_flagged_on_the_request_where_it_happened():
     m = {**MANIFEST, "incomplete": True, "stop": {"reason": "cap_reached", "after_request": "r2", "not_run": ["q05"]}}
     rows = build_sheet(m, EVENTS, QS)

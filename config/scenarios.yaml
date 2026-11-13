@@ -135,15 +135,26 @@ scenarios:
     # pilot: the run stops, marked incomplete, when a cap refuses a call or one request spends over 6,000 tokens.
     gateway: {call_timeout_s: 40.0, first_token_timeout_s: 30.0, discretionary_share: null, pilot_token_cap: 60000}
     pilot: {max_actual_per_call: 6000}
+  quality_S1:
+    description: "As quality_S2 with retrieval setting S1 (smallest chunks). Study cap 30K tokens."
+    source: real
+    kind: sequential
+    setting: S1
+    deadline_s: 90
+    limits_scale: 1
+    max_requests: 20
+    gateway: {call_timeout_s: 40.0, first_token_timeout_s: 30.0, discretionary_share: null, pilot_token_cap: 30000}
+    pilot: {max_actual_per_call: 6000}
   quality_S3:
-    description: "As quality_S2 with retrieval setting S3."
+    description: "As quality_S2 with retrieval setting S3 (larger chunks, fetch 8, MMR). Study cap 55K tokens."
     source: real
     kind: sequential
     setting: S3
     deadline_s: 90
     limits_scale: 1
     max_requests: 20
-    gateway: {call_timeout_s: 40.0, first_token_timeout_s: 30.0}
+    gateway: {call_timeout_s: 40.0, first_token_timeout_s: 30.0, discretionary_share: null, pilot_token_cap: 55000}
+    pilot: {max_actual_per_call: 6000}
   quality_measure:
     description: "PILOT: q01 and q08 (single-fact, full evidence retrieved under S2) plus q16 (unanswerable; abstains for free) on the real model, S2 only, no retries. Sizes the quality runs; not a result. q13 is kept for a separate cross-paper retrieval experiment."
     source: real

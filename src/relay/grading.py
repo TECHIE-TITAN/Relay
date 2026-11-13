@@ -65,8 +65,13 @@ def gold_summary(question: Any) -> str:
     return " | ".join(parts)
 
 
-def build_sheet(manifest: Mapping[str, Any], events: Sequence[Mapping[str, Any]], questions: Mapping[str, Any]) -> list:
-    """One row per finished request, in arrival order, with the answer the user actually saw."""
+def build_sheet(manifest: Mapping[str, Any], events: Sequence[Mapping[str, Any]], questions: Mapping[str, Any],
+                *, prefill_refusals: bool = False) -> list:
+    """One row per finished request, in arrival order, with the answer the user actually saw.
+
+    prefill_refusals: a refusal's detailed grade follows mechanically from the question type (a refusal of an
+    answerable question is wrong_refusal, of an unanswerable one correct_refusal). Those rows are filled in and
+    marked in `note`; every row that contains an answer is left for the author."""
     check_gradable_run(manifest)
     per: dict = {}
     order: list = []
@@ -92,11 +97,16 @@ def build_sheet(manifest: Mapping[str, Any], events: Sequence[Mapping[str, Any]]
         note = ""
         if stop.get("reason") == "cap_reached" and stop.get("after_request") == rid:
             note = "CAP REACHED during this request: it may have fallen back because a token cap refused a call"
+        mode = done.get("answer_mode") or ""
+        detail = ""
+        if prefill_refusals and done.get("status") == "ok" and mode == "refusal":
+            detail = "wrong_refusal" if q.answerable else "correct_refusal"
+            note = (note + " " if note else "") + "auto: refusal graded from the question type"
         rows.append({
             "request_id": rid, "question_id": qid, "category": q.category, "answerable": "yes" if q.answerable else "no",
-            "status": done.get("status"), "answer_mode": done.get("answer_mode") or "",
+            "status": done.get("status"), "answer_mode": mode,
             "retrieval_setting": done.get("retrieval_setting") or "", "question": q.text, "gold": gold_summary(q),
-            "answer": (evs.get("first_token") or {}).get("answer", ""), "detail_grade": "", "note": note,
+            "answer": (evs.get("first_token") or {}).get("answer", ""), "detail_grade": detail, "note": note,
         })
     return rows
 

@@ -301,6 +301,41 @@ def cmd_list_scenarios(args: argparse.Namespace) -> int:
     return 0
 
 
+def _ledger(cfg):
+    from .gateway import DailyLedger, GatewayConfig
+    path = cfg.paths.results_dir / f"ledger_{cfg.model().id.replace('/', '_')}.json"
+    g = GatewayConfig()
+    return DailyLedger(g.daily_token_cap, g.daily_request_cap, path=path), path
+
+
+def _check_ledger_fits(cfg, scn) -> None:
+    """A real run's token cap must fit in what is left of the client-side daily ledger, or it is refused BEFORE
+    anything is sent. (Several runs whose caps add up to more than the day must not all be allowed their full cap.)"""
+    cap = (scn.get("gateway") or {}).get("pilot_token_cap")
+    if cap is None:
+        return
+    ledger, _ = _ledger(cfg)
+    left = ledger.token_cap - ledger.tokens
+    print(f"ledger today: {ledger.tokens}/{ledger.token_cap} tokens, {ledger.requests}/{ledger.request_cap} requests; "
+          f"this run's cap {cap}; worst case after the run {ledger.tokens + int(cap)}")
+    if ledger.tokens + int(cap) > ledger.token_cap:
+        raise RelayError(
+            f"this run's cap ({cap}) does not fit in the daily ledger ({ledger.tokens} used of {ledger.token_cap}, {left} left). "
+            f"Nothing was sent. Re-run with a lower cap, for example --token-cap {max(0, left)}.")
+
+
+def cmd_ledger(args: argparse.Namespace) -> int:
+    cfg = load_config()
+    ledger, path = _ledger(cfg)
+    print(f"date (UTC, an assumption): {ledger.today}")
+    print(f"tokens   {ledger.tokens} / {ledger.token_cap}  ({ledger.token_cap - ledger.tokens} left under the cap)")
+    print(f"requests {ledger.requests} / {ledger.request_cap}")
+    print(f"provider daily limit hit: {ledger.provider_daily_limit_hit}")
+    print(f"file: {path}")
+    print("This counts only calls made by this tool. The provider's own daily total (200K tokens, 1,000 requests) may be higher.")
+    return 0
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     from .runner import load_scenarios, resolve_scenario, run_scenario, spawn_standin
 
@@ -310,6 +345,13 @@ def cmd_run(args: argparse.Namespace) -> int:
     if args.setting:
         cfg.setting(args.setting)           # validates
         scn["setting"] = args.setting
+    if args.token_cap is not None:          # may only LOWER the scenario's cap, never raise it
+        gw = dict(scn.get("gateway") or {})
+        old = gw.get("pilot_token_cap")
+        gw["pilot_token_cap"] = args.token_cap if old is None else min(int(old), args.token_cap)
+        scn["gateway"] = gw
+    if scn.get("source") == "real":
+        _check_ledger_fits(cfg, scn)
     url = args.standin_url
     proc = None
     if args.spawn_standin and scn.get("source", "standin") == "standin":
@@ -374,7 +416,7 @@ def cmd_grade_sheet(args: argparse.Namespace) -> int:
     sheet_path = paths.root / "grades.csv"
     if sheet_path.exists() and not args.force:
         raise RelayError(f"{sheet_path} already exists (your grades may be in it). Use --force to overwrite.")
-    rows = build_sheet(manifest, events, questions)
+    rows = build_sheet(manifest, events, questions, prefill_refusals=args.prefill_refusals)
     write_sheet(sheet_path, rows)
     print(f"wrote {sheet_path} with {len(rows)} rows. Fill the detail_grade column, then run apply-grades.")
     print("detail_grade values: correct, partial, incorrect (answerable, answered); wrong_refusal (answerable, refused);")
@@ -397,6 +439,43 @@ def cmd_apply_grades(args: argparse.Namespace) -> int:
     print("answer_grade:", json.dumps(block["answer_grade_counts"], sort_keys=True))
     print("by answer mode and detail:", json.dumps(block["by_mode_and_detail"], sort_keys=True))
     print(f"results.csv updated; the original is kept as {paths.root / 'results.ungraded.csv'}")
+    return 0
+
+
+def cmd_analyze(args: argparse.Namespace) -> int:
+    from .analyze import analyze
+    cfg = load_config()
+    m = cfg.model()
+    desc = {}
+    for sid, s in cfg.settings.items():
+        rerank = "no re-rank" if s.rerank == "none" else f"re-rank {s.rerank} (fetch {s.fetch_k})"
+        desc[sid] = f"{s.chunk_tokens}-token pieces, {s.k} fetched, {rerank}"
+    out_csv = args.csv or (cfg.root / "results.csv")
+    out_md = args.md or (cfg.root / "report" / "tables.md")
+    res = analyze(cfg.paths.results_dir, out_csv, out_md, probe_path=cfg.paths.results_dir / "probe_real.jsonl",
+                  prices={"in": m.price_in_per_mtok, "out": m.price_out_per_mtok}, settings_desc=desc,
+                  eval_dir=cfg.paths.results_dir / "retrieval_eval")
+    print(f"wrote {out_csv} ({res['n_rows']} rows), {out_md} and {res['sources_file']}")
+    print("run folders were only read, never modified; the sources file lists every run used, its checksums and the runs left out")
+    for sc, rid in sorted(res["runs"].items()):
+        print(f"  {sc:22s} <- {rid}")
+    for w in res["warnings"]:
+        print(f"WARNING: {w}")
+    return 0
+
+
+def cmd_export_conversation(args: argparse.Namespace) -> int:
+    from .export_conversation import export, sessions_dir_for
+    cfg = load_config()
+    d = args.sessions_dir or sessions_dir_for(cfg.root)
+    files = sorted(d.glob("*.jsonl")) if d.is_dir() else []
+    if not files:
+        raise RelayError(f"no session files (*.jsonl) in {d}. Pass --sessions-dir.")
+    out = args.out or (cfg.root / "report" / "conversation_history.md")
+    res = export(files, out, max_tool_chars=args.max_tool_chars, only_sessions=args.session)
+    print(f"wrote {out}")
+    print(json.dumps({k: v for k, v in res.items() if k != "out"}, indent=1))
+    print("Review the file before submitting: secrets are redacted by pattern only.")
     return 0
 
 
@@ -504,7 +583,10 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--setting", help="override the scenario's retrieval setting")
     s.add_argument("--run-id")
     s.add_argument("--allow-real", action="store_true", help="REQUIRED for a scenario that calls the real service (spends quota)")
+    s.add_argument("--token-cap", type=int, help="real runs: lower this run's token cap (never raises the scenario's cap)")
     s.set_defaults(func=cmd_run)
+
+    sub.add_parser("ledger", help="show today's client-side token and request ledger for the real service").set_defaults(func=cmd_ledger)
 
     s = sub.add_parser("probe", help="probe the REAL service in small stages (spends quota)")
     s.add_argument("--stage", required=True, choices=["single", "latency", "concurrency", "limit"])
@@ -522,12 +604,26 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("grade-sheet", help="export a grading sheet for a finished REAL quality run")
     s.add_argument("--run", required=True, help="run id (explicit; pilots and stand-in runs are refused)")
     s.add_argument("--force", action="store_true", help="overwrite an existing grades.csv")
+    s.add_argument("--prefill-refusals", action="store_true",
+                   help="fill in the grade of refusals (mechanical: follows from answerable or not); answers stay blank")
     s.set_defaults(func=cmd_grade_sheet)
 
     s = sub.add_parser("apply-grades", help="merge your grades.csv into the run's results.csv (answer_grade)")
     s.add_argument("--run", required=True)
     s.add_argument("--allow-partial", action="store_true", help="allow answers that are still ungraded")
     s.set_defaults(func=cmd_apply_grades)
+
+    s = sub.add_parser("export-conversation", help="export the real assistant conversation history to report/conversation_history.md")
+    s.add_argument("--sessions-dir", type=_path_arg, help="folder with the session *.jsonl files (default: this project's folder under ~/.claude/projects)")
+    s.add_argument("--out", type=_path_arg)
+    s.add_argument("--max-tool-chars", type=int, default=1500, help="clip tool inputs and outputs to this many characters")
+    s.add_argument("--session", action="append", help="only this session id (repeatable); default all")
+    s.set_defaults(func=cmd_export_conversation)
+
+    s = sub.add_parser("analyze", help="merge the runs into results.csv and write the brief's tables (report/tables.md)")
+    s.add_argument("--csv", type=_path_arg, help="output results.csv (default: project root)")
+    s.add_argument("--md", type=_path_arg, help="output tables markdown (default: report/tables.md)")
+    s.set_defaults(func=cmd_analyze)
 
     s = sub.add_parser("summarize", help="summary and invariants of a finished run")
     s.add_argument("--run", default="latest", help="run id, or 'latest'")
