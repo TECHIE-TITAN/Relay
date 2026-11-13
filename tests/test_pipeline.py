@@ -174,7 +174,14 @@ def test_ladder_level_4_when_daily_budget_is_exhausted_gives_honest_busy():
     p = pcfg(ladder_enabled=True)
     log, client, *_, (out,) = run([], p=p, ledger=ledger)
     assert out.status == "rate_limited" and out.answer_mode == "busy" and out.answer == BUSY_TEXT
-    assert out.ladder_level == 4 and len(client.calls) == 0 and "tool_start" not in names(log)
+    assert out.ladder_level == 4 and len(client.calls) == 0 and out.fail_stage == "draft"
+
+
+def test_ladder_level_4_still_refuses_unanswerable_questions_for_free():
+    ledger = DailyLedger(token_cap=100, request_cap=10)
+    ledger.record(100)
+    log, client, *_, (out,) = run([], requests=((UNANSWERABLE, 5.0),), p=pcfg(ladder_enabled=True), ledger=ledger)
+    assert out.ladder_level == 4 and out.status == "ok" and out.answer_mode == "refusal" and len(client.calls) == 0
 
 
 def test_daily_429_mid_request_is_busy_not_retried():

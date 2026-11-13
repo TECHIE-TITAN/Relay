@@ -193,10 +193,8 @@ class Pipeline:
         level, pressure = self._level()
         out.ladder_level = level
         ctx.emit("ladder", level=level, pressure={k: (round(v, 3) if isinstance(v, float) else v) for k, v in pressure.items()})
-        if level >= 4:
-            self._busy(ctx, out, "ladder_level_4")
-            return
-
+        # Level 4 (budget exhausted): retrieval is local and a refusal needs no model call, so both still
+        # run. Only a request that would need the model is answered "busy" (below, at the draft stage).
         retriever = self.retrievers[cfg.setting]
         k = retriever.setting.k
         if level == 2:
@@ -232,6 +230,9 @@ class Pipeline:
         out.hits = [h.chunk.chunk_id for h in hits]
 
         ctx.stage = "draft"
+        if level >= 4:
+            self._busy(ctx, out, "ladder_level_4")
+            return
         if level >= 3:
             ctx.emit("degrade", to="extractive", level=level)
             self._extractive_or_refuse(ctx, out, question, hits, sources, "ladder_level_3")
