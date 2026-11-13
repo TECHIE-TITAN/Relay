@@ -224,6 +224,12 @@ def analyze(results_dir: Path, out_csv: Path, out_md: Path, *, probe_path: Optio
         if sc.startswith("quality_") and not m.get("grading"):
             warnings.append(f"{sc} ({rid}) has not been graded (apply-grades): answer_grade is empty")
 
+    model_ttft: dict = {}          # per scenario: the model's own time to first token, from events (not a results.csv column)
+    for sc, (rid, m) in chosen.items():
+        evs = read_events(run_paths(results_dir, rid).events) if run_paths(results_dir, rid).events.is_file() else []
+        vals = [float(e["ttft_ms"]) for e in evs if e.get("event") == "model_first_token" and e.get("ttft_ms") is not None]
+        model_ttft[sc] = {"n": len(vals), "p50": _pct(vals, 50), "p95": _pct(vals, 95)}
+
     slow = None
     for sc, (rid, m) in chosen.items():
         if m.get("source") != "stand-in":
@@ -242,7 +248,7 @@ def analyze(results_dir: Path, out_csv: Path, out_md: Path, *, probe_path: Optio
               "meta": {sc: {"kind": m.get("kind"), "source": m.get("source"),
                             "peak_queue_len": (m.get("summary") or {}).get("peak_queue_len"),
                             "incomplete": bool(m.get("incomplete"))} for sc, (_r, m) in chosen.items()},
-              "n_rows": len(merged), "warnings": warnings, "slowest": slow, "retrieval": retrieval,
+              "n_rows": len(merged), "warnings": warnings, "slowest": slow, "retrieval": retrieval, "model_ttft": model_ttft,
               "settings_desc": dict(settings_desc), "prices": dict(prices)}
     out_md.parent.mkdir(parents=True, exist_ok=True)
     out_md.write_text(render_markdown(result), encoding="utf-8")
@@ -328,9 +334,10 @@ def render_markdown(res: Mapping[str, Any]) -> str:
     L += ["", "## Table 3: Retrieval settings (real model, same 20 questions)", "",
           "Quality is the author's manual grade of every answer released (extractive answers included; see grades.csv for the split by "
           "answer mode). Percentages are of questions asked. Tokens per answer: all answers / model answers only. "
-          "First token and total time are over status ok requests.", "",
-          "| Setting (piece size, pieces fetched, re-rank) | Questions asked | Correct and cited % | Wrong % | Refused correctly % | Refused wrongly % | Tokens per answer (all / model only) | First token p50 / p95 (ms) | Total time p50 / p95 (ms) |",
-          "|---|---|---|---|---|---|---|---|---|"]
+          "First token and total time are over status ok requests and include any wait for the token limit (the questions are sent "
+          "back to back). Model-call TTFT is the model's own time to first token for each call, from the events (not a results.csv column).", "",
+          "| Setting (piece size, pieces fetched, re-rank) | Questions asked | Correct and cited % | Wrong % | Refused correctly % | Refused wrongly % | Tokens per answer (all / model only) | Model-call TTFT p50 / p95 (ms) | First token p50 / p95 (ms) | Total time p50 / p95 (ms) |",
+          "|---|---|---|---|---|---|---|---|---|---|"]
     for sc in [n for n in names if n.startswith("quality_")]:
         s, key = st[sc], sc.split("_", 1)[1]
         g = s["grades"]
@@ -338,7 +345,9 @@ def render_markdown(res: Mapping[str, Any]) -> str:
         q = (_pc(g["correct"], s["n"]), _pc(g["wrong"], s["n"]), _pc(g["refused_correctly"], s["n"]),
              _pc(g["refused_wrongly"], s["n"])) if s["n_graded"] else (NM,) * 4
         tpa = f"{_ms(s['tokens_per_answer'])} / {_ms(s['tokens_per_model_answer'])}"
-        L.append(f"| {key}: {desc} | {s['n']} | {q[0]} | {q[1]} | {q[2]} | {q[3]} | {tpa} | {_pair(s['latency']['ft'])} | {_pair(s['latency']['total'])} |")
+        mt = res.get("model_ttft", {}).get(sc) or {"p50": None, "p95": None}
+        L.append(f"| {key}: {desc} | {s['n']} | {q[0]} | {q[1]} | {q[2]} | {q[3]} | {tpa} | {_pair(mt)} | "
+                 f"{_pair(s['latency']['ft'])} | {_pair(s['latency']['total'])} |")
     if res["retrieval"]:
         rv = res["retrieval"]["settings"]
         L += ["", f"## Table 3b: Retrieval only, all settings (offline, free; from {res['retrieval']['file']})", "",

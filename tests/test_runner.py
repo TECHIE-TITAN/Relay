@@ -34,6 +34,8 @@ def test_shipped_scenarios_parse_and_resolve():
     assert s2["gateway"]["discretionary_share"] is None and s2["gateway"]["pilot_token_cap"] == 60000
     assert s2["pilot"] == {"max_actual_per_call": 6000} and s2["max_requests"] == 20 and s2["limits_scale"] == 1
     assert "max_retries_per_call" not in s2["gateway"]           # retries keep their default cap (2)
+    for name in ("quality_S1", "quality_S2", "quality_S3"):      # the ladder would change what is being measured
+        assert resolve_scenario(doc, name)["pipeline"] == {"ladder_enabled": False}
     assert resolve_scenario(doc, "quality_measure")["gateway"]["max_retries_per_call"] == 0   # the pilot keeps no retries
     with pytest.raises(RelayError):
         resolve_scenario(doc, "nope")

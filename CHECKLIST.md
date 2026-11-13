@@ -7,7 +7,8 @@ Quota: ledger 22.5K of the 160K cap used before the S2 study; the caps S2 60K + 
 ## A. Real-service runs (spend quota; the author runs them)
 - [x] P0 Real probe: single, latency, concurrency, limit stages (`results/probe_real.jsonl`) -> Table 1
 - [x] P0 Three pilot runs (kept untouched; checksums in `results/pilot_checksums.sha256`)
-- [ ] P0 S2 quality study (`quality_S2`, cap 60K)
+- [x] S2 first run (`quality_S2_20261113T200937Z`): ladder was ON, contaminated (see DESIGN 17); kept as evidence for "retrieval when the limit is close", superseded. Cost 20.9K tokens
+- [ ] P0 S2 quality study RERUN with the ladder off (`quality_S2`, cap 60K)
 - [ ] P0 S1 quality study (`quality_S1`, cap 30K, lowered if the ledger requires)
 - [ ] P0 S3 quality study (`quality_S3`, cap 55K, lowered if the ledger requires)
 - [ ] P1 S4 scored retrieval-only (`eval-retrieval`); model metrics "not measured"

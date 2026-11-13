@@ -111,7 +111,8 @@ def test_table_figures_are_computed_from_the_merged_file(tmp_path):
 def test_quality_table_uses_the_four_grades_and_flags_ungraded_or_incomplete_runs(tmp_path):
     grades = ["correct", "wrong", "refused_correctly", "refused_wrongly"]
     rows = [row(f"q-{i}", "quality_S2", "real", grade=g, start=f"2026-11-13T19:00:{i:02d}.000+00:00") for i, g in enumerate(grades)]
-    make_run(tmp_path / "results", "q2", "quality_S2", "real", rows, kind="sequential", extra={"grading": {"n_graded": 4}})
+    mft = [{"request_id": f"q-{i}", "event": "model_first_token", "t_mono": float(i), "ttft_ms": v} for i, v in enumerate((100.0, 200.0, 300.0))]
+    make_run(tmp_path / "results", "q2", "quality_S2", "real", rows, kind="sequential", extra={"grading": {"n_graded": 4}}, events=mft)
     make_run(tmp_path / "results", "q1", "quality_S1", "real",
              [row("a-0", "quality_S1", "real", setting="S1"), row("a-1", "quality_S1", "real", setting="S1")],
              kind="sequential", extra={"incomplete": True, "stop": {"reason": "cap_reached", "not_run": ["q05", "q06"]}})
@@ -124,6 +125,8 @@ def test_quality_table_uses_the_four_grades_and_flags_ungraded_or_incomplete_run
     assert any("quality_S1" in w and "not been graded" in w for w in res["warnings"])
     assert not any("quality_S2" in w for w in res["warnings"])
     assert "(closed loop)" in md
+    assert res["model_ttft"]["quality_S2"] == {"n": 3, "p50": 200.0, "p95": 290.0}      # from events, type 7
+    assert "| 200.0 / 290.0 |" in md and res["model_ttft"]["quality_S1"]["n"] == 0
 
 
 def test_slowest_request_split_says_whether_the_delay_came_before_the_first_token():
