@@ -49,14 +49,14 @@ def pcfg(**kw) -> PipelineConfig:
     return PipelineConfig(**base)
 
 
-def run(script, requests=((Q, 5.0),), *, p=None, g=None, n=2, cap=5, ledger=None, concurrent=False):
+def run(script, requests=((Q, 5.0),), *, p=None, g=None, n=2, cap=5, ledger=None, concurrent=False, chunks=None):
     """Run one or more requests through a pipeline wired to a scripted client."""
     async def go():
         log = EventLog(None)
         client = FakeClient(script)
         gw = Gateway(client, g or gcfg(), log, ledger=ledger)
         adm = Admission(n, cap, newest_first_after_s=100.0, min_service_s=0.05, initial_service_s=0.1, estimate_check=False)
-        retr = Retriever(SETTING, CHUNKS, abstain_min_coverage=0.5, mmr_lambda=0.7)
+        retr = Retriever(SETTING, chunks or CHUNKS, abstain_min_coverage=0.5, mmr_lambda=0.7)
         pipe = Pipeline({"S1": retr}, PAPERS, gw, adm, p or pcfg(), log)
         ctxs = [ctx_for(log, deadline_s=d, rid=f"r{i}", question=q) for i, (q, d) in enumerate(requests)]
         if concurrent:
@@ -176,6 +176,27 @@ def test_pilot_configuration_regeneration_off_goes_straight_to_extractive_after_
     assert events_named(log, "degrade")[0]["reason"] == "v0_failed"
     ft = events_named(log, "first_token")[0]
     assert ft["mode"] == "extractive" and ft["answer"] == out.answer
+
+
+def test_q01_pilot_draft_now_passes_v0_and_is_released_as_the_model_answer():
+    q = "How many identical layers are used in the Transformer's encoder stack?"
+    draft = "The Transformer’s encoder stack uses six identical layers. [S1]"
+    log, client, *_, (out,) = run([ok_result(text=draft)], requests=((q, 5.0),), p=pcfg(regenerate=False))
+    assert len(client.calls) == 1 and out.answer_mode == "llm" and out.v0_passed is True
+    assert events_named(log, "verify_result")[0]["passed"] is True
+
+
+def test_q08_pilot_case_refuses_honestly_instead_of_quoting_the_other_system():
+    q = "How does Moshi represent the user's speech and its own generated speech during full-duplex dialogue?"
+    only_related = [chunk("m13", "moshi", "Moshi is new. The only previous full-duplex dialogue system is dGSLM "
+                      "(Nguyen et al., 2023), which models user and system speech as separate audio token streams "
+                      "and proposes a Siamese architecture to process both streams jointly.", 6)]
+    bad = ok_result(text="Moshi uses 12 parallel streams [S1].")        # fails V0: 12 is not in the evidence
+    log, client, *_, (out,) = run([bad], requests=((q, 5.0),), p=pcfg(regenerate=False), chunks=only_related)
+    assert len(client.calls) == 1                                        # the model was called, so retrieval did not abstain
+    assert out.answer_mode == "refusal" and out.status == "ok" and out.fail_reason.startswith("unverified")
+    assert "dGSLM" not in out.answer and "Nguyen" not in out.answer
+    assert not any(e["passed"] for e in events_named(log, "verify_result"))
 
 
 def test_long_checked_text_is_truncated_in_the_log_only():

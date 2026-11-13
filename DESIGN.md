@@ -672,3 +672,26 @@ Code is the source of truth where it differs from sections 3 to 8. Nothing here 
 - Failed calls report no provider usage. Their tokens are tracked separately as `tokens_unaccounted_est` (an estimate) and are not added to `tokens_in/out`, which hold provider-reported usage only. The daily ledger does count a conservative estimate for them.
 - The client-side daily ledger counts only this tool's calls; anything else on the account is invisible to it.
 - Capacity ("rate_x") is arithmetic on the limits and an assumed 2,200 tokens per answer, not a measurement.
+
+## 16. Post-pilot changes to V0 and the extractive fallback (2026-11-13)
+
+**These rules were changed after looking at two real pilot samples.** Any before/after comparison is therefore not blind, and the changed behaviour must be reported as "after the pilot", never as the original design.
+
+**What the pilot showed** (real service, S2, `quality_measure`, regeneration off; runs `quality_measure_20261113T192236Z` and `quality_measure_20261113T193012Z`, both kept unmodified; the first logged no text, the second logged drafts and reasons):
+1. q01: the model's draft "The Transformer’s encoder stack uses six identical layers. [S1]" was correct but V0 rejected it (`ungrounded_entity: transformer`). The name came from the question and the cited chunk does not contain it.
+2. q08: the draft was rejected for `uncited_claim` (its first sentence had no citation). That rejection was correct and is unchanged. The extractive fallback then released a sentence about a different system (dGSLM, prior work in "Related Work") and V0 passed it, because V0 checks faithfulness to a passage, not relevance to the question.
+Both pilot runs had identical token counts (1,593+40 and 1,636+158), so the second sample probably repeated the first.
+
+**Change 1, entity grounding (`verify_v0(..., question=...)`).** A name or acronym in the answer is not flagged when the user already wrote it in the question; names the question and the evidence do not contain are still `ungrounded_entity`. Numbers and quoted text are still checked against the evidence only. *Limit:* an answer can now repeat a false premise's name; the sentence still needs a citation and must pass the lexical-support check.
+
+**Change 2, extractive relevance (`extractive_answer`).**
+- A sentence must share at least 2 distinct content words with the question (was 1).
+- A sentence is skipped when it clearly credits its claim to another work: it carries an in-text citation (`Surname et al., 2023`, `Surname and Other 2021`, bare `et al.`), it does not mention any name or acronym from the question, and the question does not name the cited author. A sentence about the question's subject that merely cites support is kept; if the question contains no name or acronym, nothing is skipped on this ground.
+- Sentences that name the question's subject get a score bonus of 2 (a preference, not a requirement).
+- If nothing qualifies the function returns `None` and the pipeline releases the existing honest refusal.
+*Rejected alternative:* requiring the question's name in the sentence. It would refuse q01, whose correct sentence never says "Transformer".
+*Limits:* this is a heuristic, not a relevance guarantee; V0 still cannot judge relevance. The fallback still reads only the top 2 retrieved chunks. A relevant sentence that cites other work and never names the subject can be skipped, which turns an extractive answer into a refusal.
+
+**Unchanged on purpose:** the citation-on-every-sentence rule, the 0.5 lexical-support threshold, regeneration (on in the default config; off in the pilot scenario only), and every limit and ladder rule in sections 3 to 15.
+
+**Tests:** `tests/test_verify.py` (q01 entity, q08 prior-work sentence, citation exclusion not blind to "et al.", no relevant passage) and `tests/test_pipeline.py` (q01 draft released as an LLM answer; q08 refuses instead of quoting the other system).

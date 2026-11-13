@@ -311,7 +311,7 @@ class Pipeline:
 
     def _verify(self, ctx: RequestContext, out: RequestOutcome, text: str, sources: Mapping[str, Any], attempt: int) -> V0Result:
         ctx.stage = "verify"
-        v0 = verify_v0(text, sources, support_threshold=self.cfg.support_threshold)
+        v0 = verify_v0(text, sources, support_threshold=self.cfg.support_threshold, question=ctx.question)
         out.v0_passed = v0.passed
         out.v0_failures = list(v0.failures)
         ctx.emit("verify_result", attempt=attempt, passed=v0.passed, failures=v0.failures, checks=v0.checks,

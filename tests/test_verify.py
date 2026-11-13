@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from relay.prompts import build_messages, cite_label, render_citations, source_map
 from relay.schema import Chunk, Hit
-from relay.verify import EXTRACTIVE_PREFIX, extractive_answer, split_sentences, verify_v0
+from relay.verify import (
+    EXTRACTIVE_PREFIX, attributed_elsewhere, extractive_answer, question_entities, split_sentences, verify_v0,
+)
 
 
 def chunk(cid, text, paper="attention", page=3, section="3.1 Encoder"):
@@ -111,6 +113,71 @@ def test_extractive_answer_passes_v0_by_construction():
 def test_extractive_answer_returns_none_without_overlap():
     hits = [Hit(chunk=C2, score=1.0, rank=1)]
     assert extractive_answer("zebra quantum helicopter", hits) is None
+
+
+# ---- post-pilot regression tests (DESIGN.md 16). Texts are the real ones from the pilot logs. ----------------
+
+Q01 = "How many identical layers are used in the Transformer's encoder stack?"
+Q01_DRAFT = "The Transformer’s encoder stack uses six identical layers. [S1]"
+Q01_CHUNK = chunk("a-6", "3.1 Encoder and Decoder Stacks Encoder: The encoder is composed of a stack of N = 6 identical "
+                         "layers. Each layer has two sub-layers.")
+
+Q08 = "How does Moshi represent the user's speech and its own generated speech during full-duplex dialogue?"
+DGSLM = ("The only previous full-duplex dialogue system is dGSLM (Nguyen et al., 2023), which models user and "
+         "system speech as separate audio token streams and proposes a Siamese architecture to process both streams jointly.")
+GOLD = "Moshi casts dialogue as speech-to-speech generation, while modeling separately its own speech and that of the user into parallel streams."
+Q08_RELATED = chunk("m-13", "Moshi is new. " + DGSLM, paper="moshi", page=6, section="2 Related Work")
+Q08_ABSTRACT = chunk("m-0", GOLD, paper="moshi", page=1, section="Abstract")
+
+
+def test_q01_a_name_from_the_question_is_not_ungrounded_but_a_new_name_still_is():
+    src = {"S1": Q01_CHUNK}                                       # the chunk never says "Transformer"
+    before = verify_v0(Q01_DRAFT, src)                            # no question given: the old behaviour
+    assert not before.passed and before.failures == ["ungrounded_entity"] and before.details == ["ungrounded_entity: transformer"]
+    after = verify_v0(Q01_DRAFT, src, question=Q01)
+    assert after.passed and after.failures == [] and after.details == []
+    invented = verify_v0("BERT’s encoder stack uses six identical layers. [S1]", src, question=Q01)
+    assert not invented.passed and "ungrounded_entity" in invented.failures
+    assert any(d.startswith("ungrounded_entity") and "bert" in d for d in invented.details)
+
+
+def test_question_names_do_not_excuse_numbers_or_fabricated_quotes():
+    src = {"S1": Q01_CHUNK}
+    assert "ungrounded_number" in verify_v0("The Transformer’s encoder stack uses 12 identical layers [S1].", src, question=Q01).failures
+    assert "fabricated_quote" in verify_v0('The Transformer’s encoder has "seven odd layers" [S1].', src, question=Q01).failures
+
+
+def test_q08_extractive_fallback_skips_the_sentence_about_another_system():
+    hits = [Hit(chunk=Q08_RELATED, score=3.0, rank=1), Hit(chunk=Q08_ABSTRACT, score=2.0, rank=2)]
+    ans = extractive_answer(Q08, hits)
+    assert ans is not None and "parallel streams" in ans and "dGSLM" not in ans and ans.endswith("[S2].")
+    assert verify_v0(ans, {"S1": Q08_RELATED, "S2": Q08_ABSTRACT}, question=Q08).passed
+
+
+def test_q08_with_only_the_prior_work_sentence_there_is_no_extractive_answer():
+    assert extractive_answer(Q08, [Hit(chunk=Q08_RELATED, score=3.0, rank=1)]) is None
+
+
+def test_citation_exclusion_is_not_blind_to_et_al():
+    # a sentence about the question's own subject that merely cites support is kept
+    own = chunk("m-1", "Moshi models user and system speech as parallel streams, following earlier work (Nguyen et al., 2023).",
+                paper="moshi")
+    assert extractive_answer(Q08, [Hit(chunk=own, score=1.0, rank=1)]) is not None
+    # a question that itself names the cited author keeps that author's sentence
+    ask = "What did Nguyen propose for full-duplex dialogue and user speech streams?"
+    assert extractive_answer(ask, [Hit(chunk=Q08_RELATED, score=1.0, rank=1)]) is not None
+    # a question naming no entity has no subject to be absent, so nothing is excluded on attribution alone
+    plain = "which system models user speech as separate audio token streams?"
+    assert extractive_answer(plain, [Hit(chunk=Q08_RELATED, score=1.0, rank=1)]) is not None
+    # the unit helper agrees
+    ents = question_entities(Q08)
+    assert ents == {"moshi"} and attributed_elsewhere(DGSLM, Q08, ents) and not attributed_elsewhere(GOLD, Q08, ents)
+
+
+def test_no_relevant_passage_means_none_even_with_a_single_shared_word():
+    one_word = chunk("x-1", "The model runs on GPUs with hardware acceleration enabled today.")
+    assert extractive_answer("What is the exact inference latency of GPT-4 on the same hardware as Moshi?",
+                             [Hit(chunk=one_word, score=1.0, rank=1), Hit(chunk=C2, score=0.5, rank=2)]) is None
 
 
 def test_prompt_labels_sources_and_render_citations_is_readable():

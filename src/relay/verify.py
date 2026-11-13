@@ -78,8 +78,13 @@ def cited_ids(sentence: str) -> list:
     return out
 
 
-def verify_v0(answer: str, sources: Mapping[str, Chunk], *, support_threshold: float = SUPPORT_THRESHOLD) -> V0Result:
+def verify_v0(answer: str, sources: Mapping[str, Chunk], *, support_threshold: float = SUPPORT_THRESHOLD,
+              question: str = "") -> V0Result:
+    """`question` (optional): names and acronyms the user already wrote are not 'ungrounded' when the
+    answer repeats them (post-pilot change, DESIGN.md 16). Numbers and quotes are still checked
+    against the evidence only."""
     t0 = time.perf_counter()
+    q_words = set(tokenize(question, drop_stopwords=False)) if question else set()
     failures: set = set()
     checks = {k: True for k in ("citation_validity", "citation_coverage", "quote_fidelity",
                                 "number_entity_grounding", "lexical_support", "refusal_consistency")}
@@ -133,7 +138,7 @@ def verify_v0(answer: str, sources: Mapping[str, Chunk], *, support_threshold: f
         words = body.split()
         acr = [a.lower() for a in _ACRONYM_RE.findall(body)]
         names = [n.lower() for n in _NAME_RE.findall(" ".join(words[1:]))]
-        missing_ents = [w for w in acr + names if w not in ev_words]
+        missing_ents = [w for w in acr + names if w not in ev_words and w not in q_words]
         if missing_ents:
             bad("number_entity_grounding", "ungrounded_entity", ", ".join(missing_ents))
         toks = [t for t in tokenize(body) if not t.isdigit()]
@@ -154,15 +159,57 @@ def _chunk_sentences(text: str) -> list:
     return [s.strip() for s in re.split(r"(?<=[.!?])\s+(?=[A-Z])", text) if s.strip()]
 
 
+# --- extractive relevance (post-pilot change, DESIGN.md 16) -----------------------------------------
+MIN_EXTRACTIVE_OVERLAP = 2           # distinct content words a sentence must share with the question
+SUBJECT_BONUS = 2                    # score bonus for a sentence that names the question's subject
+_QUESTION_WORDS = frozenset({
+    "what", "how", "which", "who", "whom", "whose", "when", "where", "why", "according", "does", "did", "do",
+    "is", "are", "was", "were", "can", "could", "table", "figure", "section", "appendix", "the", "and", "for",
+})
+# "Nguyen et al., 2023", "Nguyen and Lee 2023", "(Smith, 2021)": an in-text citation naming another work.
+_ATTRIB_RE = re.compile(r"\b([A-Z][A-Za-z\-]+)(?:\s+et\s+al\.?|\s+and\s+[A-Z][A-Za-z\-]+)?,?\s*\(?(?:19|20)\d{2}[a-z]?\b")
+_ETAL_RE = re.compile(r"\bet\s+al\b", re.I)
+
+
+def question_entities(question: str) -> set:
+    """Lower-cased names and acronyms the user wrote (Moshi, GPT, H-Net's 'Net'), without question words."""
+    found = _NAME_RE.findall(question) + _ACRONYM_RE.findall(question)
+    return {w.lower() for w in found if w.lower() not in _QUESTION_WORDS}
+
+
+def attributed_elsewhere(sentence: str, question: str, entities: set) -> bool:
+    """True when the sentence clearly credits its claim to ANOTHER work: it carries an in-text citation, it does not
+    mention the question's subject, and the question does not name the cited work. A sentence about the subject
+    that merely cites support ('Moshi ... (Smith et al., 2023)') is kept, and so is every sentence when the
+    question names no entity (there is then no subject to be absent)."""
+    if not entities:
+        return False
+    marks = list(_ATTRIB_RE.finditer(sentence))
+    if not marks and not _ETAL_RE.search(sentence):
+        return False
+    if entities & set(tokenize(sentence, drop_stopwords=False)):
+        return False
+    cited = {m.group(1).lower() for m in marks}
+    return not (cited & set(tokenize(question, drop_stopwords=False)))
+
+
 def extractive_answer(question: str, hits: Sequence[Hit], *, max_hits: int = 2) -> Optional[str]:
-    """The best-matching verbatim sentence from the top hits, quoted and cited. None if nothing overlaps the question."""
+    """The best-matching verbatim sentence from the top hits, quoted and cited.
+
+    A sentence qualifies only if it shares at least MIN_EXTRACTIVE_OVERLAP content words with the question and is
+    not clearly about another work (`attributed_elsewhere`). Sentences naming the question's subject get a bonus.
+    None (the pipeline then refuses honestly) if nothing qualifies. This is a heuristic, not a relevance guarantee."""
     q = set(tokenize(question))
+    ents = question_entities(question)
     best = (0, None, None)   # (score, sentence, label)
     for i, h in enumerate(hits[:max_hits], 1):
         for sent in _chunk_sentences(h.chunk.text):
             if len(sent.split()) < 6:
                 continue
-            score = len(q & set(tokenize(sent)))
+            overlap = len(q & set(tokenize(sent)))
+            if overlap < MIN_EXTRACTIVE_OVERLAP or attributed_elsewhere(sent, question, ents):
+                continue
+            score = overlap + (SUBJECT_BONUS if ents & set(tokenize(sent, drop_stopwords=False)) else 0)
             if score > best[0]:
                 best = (score, sent, f"S{i}")
     if best[1] is None:
