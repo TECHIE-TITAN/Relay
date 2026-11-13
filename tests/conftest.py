@@ -51,6 +51,35 @@ def write_project(root: Path) -> Path:
 
 
 @pytest.fixture
+def standin_url():
+    """A live stand-in server on a free local port, for tests that need real streaming."""
+    import socket
+    import threading
+    import time
+
+    import uvicorn
+
+    from relay.standin.profile import StandinProfile
+    from relay.standin.server import create_app
+
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()
+    server = uvicorn.Server(uvicorn.Config(create_app(StandinProfile(p_hang=0.0, p_5xx=0.0, p_midstream=0.0, p_slow=0.0, p_bad_citation=0.0)), host="127.0.0.1", port=port, log_level="error"))
+    t = threading.Thread(target=server.run, daemon=True)
+    t.start()
+    t0 = time.time()
+    while not server.started:
+        if time.time() - t0 > 10:
+            raise RuntimeError("stand-in test server did not start")
+        time.sleep(0.05)
+    yield f"http://127.0.0.1:{port}"
+    server.should_exit = True
+    t.join(timeout=5)
+
+
+@pytest.fixture
 def project(tmp_path: Path) -> Path:
     return write_project(tmp_path)
 

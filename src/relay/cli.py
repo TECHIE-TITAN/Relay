@@ -345,6 +345,46 @@ def cmd_summarize(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_probe(args: argparse.Namespace) -> int:
+    from .gateway import DailyLedger, GatewayConfig
+    from .llm_client import LLMClient
+    from .probe import PLANNED_TOKENS, ProbeEnv, run_probe
+
+    cfg = load_config()
+    model = cfg.model()
+    real = not args.base_url
+    key = None
+    if real:
+        if not args.allow_real:
+            raise RelayError("a probe calls the REAL service and spends quota. Re-run with --allow-real. Nothing was sent.")
+        key = get_api_key(cfg.root)
+        if not key:
+            raise RelayError("GROQ_API_KEY is not set (put it in .env). Nothing was sent.")
+    g = GatewayConfig()
+    ledger = DailyLedger(g.daily_token_cap, g.daily_request_cap,
+                         path=(cfg.paths.results_dir / f"ledger_{model.id.replace('/', '_')}.json") if real else None)
+    print(f"probe stage '{args.stage}' on {'REAL ' + model.id if real else 'stand-in ' + args.base_url}")
+    print(f"planned: at most about {PLANNED_TOKENS[args.stage]} tokens. Ledger today: {ledger.tokens}/{ledger.token_cap} tokens, "
+          f"{ledger.requests} requests (client-side count of this tool's own calls).")
+
+    async def go() -> list:
+        client = LLMClient(args.base_url or model.base_url, model.id, api_key=key,
+                           extra_params={} if args.no_extra_params else model.extra_params,
+                           stream_options=args.stream_options)
+        env = ProbeEnv(client, ledger, cfg.paths.results_dir / "probe_real.jsonl", model.id, "real" if real else "stand-in")
+        try:
+            return await run_probe(env, args.stage, n=args.n, big=args.big, reps=args.reps,
+                                   max_calls=args.max_calls, recovery=not args.no_recovery)
+        finally:
+            await client.aclose()
+
+    for line in asyncio.run(go()):
+        print(line)
+    print(f"ledger now: {ledger.tokens}/{ledger.token_cap} tokens, {ledger.requests} requests")
+    print(f"raw rows appended to {cfg.paths.results_dir / 'probe_real.jsonl'}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="relay", description="The Relay: command line tools")
     sub = p.add_subparsers(dest="command", required=True)
@@ -409,6 +449,19 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--run-id")
     s.add_argument("--allow-real", action="store_true", help="REQUIRED for a scenario that calls the real service (spends quota)")
     s.set_defaults(func=cmd_run)
+
+    s = sub.add_parser("probe", help="probe the REAL service in small stages (spends quota)")
+    s.add_argument("--stage", required=True, choices=["single", "latency", "concurrency", "limit"])
+    s.add_argument("--allow-real", action="store_true", help="REQUIRED: this calls the real service")
+    s.add_argument("--n", type=int, default=10, help="latency: number of calls")
+    s.add_argument("--big", type=int, default=4, help="latency: how many of them use a ~1.5K-token prompt")
+    s.add_argument("--reps", type=int, default=3, help="concurrency: batches per level")
+    s.add_argument("--max-calls", type=int, default=40, help="limit: stop after this many calls even without a 429")
+    s.add_argument("--no-recovery", action="store_true", help="limit: do not wait for recovery after the first 429")
+    s.add_argument("--no-extra-params", action="store_true", help="omit extra_params (e.g. reasoning_effort) from the request")
+    s.add_argument("--stream-options", action="store_true", help="send stream_options.include_usage")
+    s.add_argument("--base-url", help="TEST HOOK: probe this OpenAI-compatible URL (a local stand-in) instead of the real service")
+    s.set_defaults(func=cmd_probe)
 
     s = sub.add_parser("summarize", help="summary and invariants of a finished run")
     s.add_argument("--run", default="latest", help="run id, or 'latest'")

@@ -85,25 +85,6 @@ def live_project(project: Path):
     return project
 
 
-@pytest.fixture
-def standin_url():
-    s = socket.socket()
-    s.bind(("127.0.0.1", 0))
-    port = s.getsockname()[1]
-    s.close()
-    server = uvicorn.Server(uvicorn.Config(create_app(StandinProfile()), host="127.0.0.1", port=port, log_level="error"))
-    t = threading.Thread(target=server.run, daemon=True)
-    t.start()
-    t0 = time.time()
-    while not server.started:
-        if time.time() - t0 > 10:
-            raise RuntimeError("stand-in test server did not start")
-        time.sleep(0.05)
-    yield f"http://127.0.0.1:{port}"
-    server.should_exit = True
-    t.join(timeout=5)
-
-
 TINY = {
     "name": "tiny", "source": "standin", "setting": "S1", "seed": 3, "deadline_s": 6, "limits_scale": 10,
     "est_tokens_per_answer": 500, "drain_s": 4, "state_interval_s": 0.2,
