@@ -144,6 +144,27 @@ def test_prefill_refusals_fills_only_refusals_and_marks_them():
     assert all(r["detail_grade"] == "" for r in build_sheet(MANIFEST, EVENTS, QS))                # off by default
 
 
+def test_proposals_fill_only_blank_cells_are_marked_and_are_reported_as_assistant_proposed(tmp_path):
+    from relay.grading import merge_proposals
+    rows = graded_sheet(r0="")                                      # r1, r2 are set; r0 is blank; r3 is a failed request
+    rows[0]["detail_grade"] = ""
+    prop = tmp_path / "p.csv"
+    prop.write_text("request_id,detail_grade,note\nr0,correct,\"cites p.3, N = 6\"\nr1,answered_unanswerable,\"must not overwrite\"\n",
+                    encoding="utf-8")
+    merged, n = merge_proposals(rows, prop)
+    assert n == 1 and merged[0]["detail_grade"] == "correct" and "assistant-proposed: cites p.3, N = 6" in merged[0]["note"]
+    assert merged[1]["detail_grade"] == "correct_refusal"            # an existing grade is never overwritten
+    p = tmp_path / "results.csv"
+    write_run_files(p, result_rows())
+    block = apply_grades(p, merged)
+    assert "1 proposed by the assistant" in block["graded_by"] and "responsible" in block["graded_by"]
+    assert "author" in block["graded_by"]
+    bad = tmp_path / "bad.csv"
+    bad.write_text("request_id,detail_grade,note\nzzz,correct,x\n", encoding="utf-8")
+    with pytest.raises(RelayError, match="not in the sheet"):
+        merge_proposals(rows, bad)
+
+
 def test_a_cap_stop_is_flagged_on_the_request_where_it_happened():
     m = {**MANIFEST, "incomplete": True, "stop": {"reason": "cap_reached", "after_request": "r2", "not_run": ["q05"]}}
     rows = build_sheet(m, EVENTS, QS)

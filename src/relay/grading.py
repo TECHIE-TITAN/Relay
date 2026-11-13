@@ -126,6 +126,30 @@ def read_sheet(path: Path) -> list:
         return list(csv.DictReader(f))
 
 
+ASSISTANT_MARK = "assistant-proposed"
+
+
+def merge_proposals(sheet: Sequence[Mapping[str, str]], proposals_path: Path) -> tuple:
+    """Fill BLANK detail_grade cells from a proposals file (request_id, detail_grade, note). The author's own entries are
+    never overwritten, and every filled row is marked 'assistant-proposed' in its note so the report can say so."""
+    with proposals_path.open(newline="", encoding="utf-8") as f:
+        props = {r["request_id"]: r for r in csv.DictReader(f)}
+    unknown = sorted(set(props) - {r["request_id"] for r in sheet})
+    if unknown:
+        raise RelayError(f"proposals for requests that are not in the sheet: {unknown}")
+    out, n = [], 0
+    for r in sheet:
+        r = dict(r)
+        p = props.get(r["request_id"])
+        if p and not (r.get("detail_grade") or "").strip():
+            r["detail_grade"] = p["detail_grade"].strip()
+            why = (p.get("note") or "").strip()
+            r["note"] = ((r.get("note") or "") + " " if r.get("note") else "") + ASSISTANT_MARK + (f": {why}" if why else "")
+            n += 1
+        out.append(r)
+    return out, n
+
+
 def derive_grades(sheet: Sequence[Mapping[str, str]], *, allow_partial: bool = False) -> dict:
     """request_id -> (detail_grade, answer_grade). Raises on any invalid or inconsistent entry."""
     out: dict = {}
@@ -180,4 +204,12 @@ def apply_grades(results_path: Path, sheet: Sequence[Mapping[str, str]], *, allo
     return {"graded_at": datetime.now(timezone.utc).isoformat(), "n_graded": len(derived),
             "n_ungraded_ok": sum(1 for r in sheet if allowed_details(r["answerable"] == "yes", r["status"], r["answer_mode"])) - len(derived),
             "answer_grade_counts": csv_counts, "by_mode_and_detail": by_mode,
-            "mapping": dict(DETAIL_TO_CSV), "graded_by": "the author (manual)"}
+            "mapping": dict(DETAIL_TO_CSV), "graded_by": _graded_by(sheet, derived)}
+
+
+def _graded_by(sheet: Sequence[Mapping[str, str]], derived: Mapping[str, tuple]) -> str:
+    proposed = sum(1 for r in sheet if r["request_id"] in derived and ASSISTANT_MARK in (r.get("note") or ""))
+    auto = sum(1 for r in sheet if r["request_id"] in derived and "auto:" in (r.get("note") or ""))
+    manual = len(derived) - proposed - auto
+    return (f"{manual} grades written by the author, {proposed} proposed by the assistant, {auto} set mechanically (refusals); "
+            f"the author applied them with apply-grades" + ("" if not proposed else " and is responsible for them"))

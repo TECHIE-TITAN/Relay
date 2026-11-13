@@ -430,12 +430,18 @@ def cmd_grade_sheet(args: argparse.Namespace) -> int:
 def cmd_apply_grades(args: argparse.Namespace) -> int:
     import json
     from .artifacts import write_manifest
-    from .grading import apply_grades, check_gradable_run, read_sheet
+    from .grading import apply_grades, check_gradable_run, merge_proposals, read_sheet, write_sheet
     _, paths, manifest, _events, _questions = _graded_run(args)
     check_gradable_run(manifest)
-    block = apply_grades(paths.results, read_sheet(paths.root / "grades.csv"), allow_partial=args.allow_partial)
+    sheet = read_sheet(paths.root / "grades.csv")
+    if args.proposals:
+        sheet, n = merge_proposals(sheet, args.proposals)
+        write_sheet(paths.root / "grades.csv", sheet)        # grades.csv keeps the final detail, with the proposals marked
+        print(f"filled {n} blank grades from {args.proposals.name}, marked 'assistant-proposed' in the note column")
+    block = apply_grades(paths.results, sheet, allow_partial=args.allow_partial)
     write_manifest(paths.manifest, {**manifest, "grading": block})
     print(f"graded {block['n_graded']} answers ({block['n_ungraded_ok']} still ungraded)")
+    print("graded by:", block["graded_by"])
     print("answer_grade:", json.dumps(block["answer_grade_counts"], sort_keys=True))
     print("by answer mode and detail:", json.dumps(block["by_mode_and_detail"], sort_keys=True))
     print(f"results.csv updated; the original is kept as {paths.root / 'results.ungraded.csv'}")
@@ -611,6 +617,8 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("apply-grades", help="merge your grades.csv into the run's results.csv (answer_grade)")
     s.add_argument("--run", required=True)
     s.add_argument("--allow-partial", action="store_true", help="allow answers that are still ungraded")
+    s.add_argument("--proposals", type=_path_arg,
+                   help="CSV (request_id, detail_grade, note) of proposed grades; fills blank cells only and marks them assistant-proposed")
     s.set_defaults(func=cmd_apply_grades)
 
     s = sub.add_parser("export-conversation", help="export the real assistant conversation history to report/conversation_history.md")
