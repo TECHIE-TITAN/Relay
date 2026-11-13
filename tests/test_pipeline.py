@@ -199,6 +199,19 @@ def test_q08_pilot_case_refuses_honestly_instead_of_quoting_the_other_system():
     assert not any(e["passed"] for e in events_named(log, "verify_result"))
 
 
+def test_q08_with_only_title_page_text_left_refuses_honestly_instead_of_quoting_it():
+    q = "How does Moshi represent the user's speech and its own generated speech during full-duplex dialogue?"
+    blob = ("Moshi: a speech-text foundation model for real-time dialogue Alexandre D ́efossez∗ alex@kyutai.org "
+            "Neil Zeghidour∗ neil@kyutai.org Kyutai ∗Equal contribution Abstract We introduce Moshi, a speech-text "
+            "foundation model and full-duplex spoken dialogue framework. User and own speech.")
+    bad = ok_result(text="Moshi uses 12 parallel streams [S1].")        # fails V0: 12 is not in the evidence
+    log, client, *_, (out,) = run([bad], requests=((q, 5.0),), p=pcfg(regenerate=False),
+                                  chunks=[chunk("m0", "moshi", blob, 1)])
+    assert len(client.calls) == 1                                        # the model was called, so retrieval did not abstain
+    assert out.answer_mode == "refusal" and out.fail_reason.startswith("unverified")
+    assert "kyutai" not in out.answer and "@" not in out.answer
+
+
 def test_long_checked_text_is_truncated_in_the_log_only():
     long_text = ("The encoder has identical layers [S1]. " * 100).strip()
     log, *_ = run([ok_result(text=long_text), ok_result(text=long_text)])

@@ -169,6 +169,9 @@ _QUESTION_WORDS = frozenset({
 # "Nguyen et al., 2023", "Nguyen and Lee 2023", "(Smith, 2021)": an in-text citation naming another work.
 _ATTRIB_RE = re.compile(r"\b([A-Z][A-Za-z\-]+)(?:\s+et\s+al\.?|\s+and\s+[A-Z][A-Za-z\-]+)?,?\s*\(?(?:19|20)\d{2}[a-z]?\b")
 _ETAL_RE = re.compile(r"\bet\s+al\b", re.I)
+# Title-page text (author lists, affiliations) is not an answer. PDF extraction often leaves it as one long
+# "sentence" full of question words, so a sentence containing an e-mail address is never quoted.
+_EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
 
 
 def question_entities(question: str) -> set:
@@ -196,15 +199,16 @@ def attributed_elsewhere(sentence: str, question: str, entities: set) -> bool:
 def extractive_answer(question: str, hits: Sequence[Hit], *, max_hits: int = 2) -> Optional[str]:
     """The best-matching verbatim sentence from the top hits, quoted and cited.
 
-    A sentence qualifies only if it shares at least MIN_EXTRACTIVE_OVERLAP content words with the question and is
-    not clearly about another work (`attributed_elsewhere`). Sentences naming the question's subject get a bonus.
+    A sentence qualifies only if it shares at least MIN_EXTRACTIVE_OVERLAP content words with the question, is
+    not clearly about another work (`attributed_elsewhere`) and contains no e-mail address (title-page text).
+    Sentences naming the question's subject get a bonus.
     None (the pipeline then refuses honestly) if nothing qualifies. This is a heuristic, not a relevance guarantee."""
     q = set(tokenize(question))
     ents = question_entities(question)
     best = (0, None, None)   # (score, sentence, label)
     for i, h in enumerate(hits[:max_hits], 1):
         for sent in _chunk_sentences(h.chunk.text):
-            if len(sent.split()) < 6:
+            if len(sent.split()) < 6 or _EMAIL_RE.search(sent):
                 continue
             overlap = len(q & set(tokenize(sent)))
             if overlap < MIN_EXTRACTIVE_OVERLAP or attributed_elsewhere(sent, question, ents):

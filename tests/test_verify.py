@@ -174,6 +174,30 @@ def test_citation_exclusion_is_not_blind_to_et_al():
     assert ents == {"moshi"} and attributed_elsewhere(DGSLM, Q08, ents) and not attributed_elsewhere(GOLD, Q08, ents)
 
 
+TITLE_BLOB = ("Moshi: a speech-text foundation model for real-time dialogue Alexandre D ́efossez∗ alex@kyutai.org "
+              "Laurent Mazar ́e∗ Manu Orsini Am ́elie Royer Patrick P ́erez Herv ́e J ́egou Edouard Grave∗ "
+              "Neil Zeghidour∗ neil@kyutai.org Kyutai ∗Equal contribution Abstract We introduce Moshi, a speech-text "
+              "foundation model and full-duplex spoken dialogue framework.")
+BODY_SENTENCE = ("Starting from a text language model backbone, Moshi generates speech as tokens from the residual "
+                 "quantizer of a neural audio codec, while modeling separately its own speech and that of the user "
+                 "into parallel streams.")
+
+
+def test_q08_title_page_blob_is_skipped_and_the_body_passage_is_preferred():
+    # the pilot's third run quoted the title-page blob (author names and e-mails) for this question
+    abstract = chunk("m-0", TITLE_BLOB + " Moshi solves these independent issues altogether by casting spoken "
+                     "dialogue as speech-to-speech generation. " + BODY_SENTENCE, paper="moshi", page=1, section="Abstract")
+    ans = extractive_answer(Q08, [Hit(chunk=abstract, score=2.0, rank=1)])
+    assert ans is not None and "parallel streams" in ans
+    assert "kyutai" not in ans and "@" not in ans and "Zeghidour" not in ans
+    assert verify_v0(ans, {"S1": abstract}, question=Q08).passed
+
+
+def test_when_only_title_page_text_remains_there_is_no_extractive_answer():
+    only_blob = chunk("m-0", TITLE_BLOB + " Own user speech.", paper="moshi", page=1, section="Abstract")
+    assert extractive_answer(Q08, [Hit(chunk=only_blob, score=2.0, rank=1)]) is None
+
+
 def test_no_relevant_passage_means_none_even_with_a_single_shared_word():
     one_word = chunk("x-1", "The model runs on GPUs with hardware acceleration enabled today.")
     assert extractive_answer("What is the exact inference latency of GPT-4 on the same hardware as Moshi?",
