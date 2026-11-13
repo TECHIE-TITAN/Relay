@@ -84,7 +84,7 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:5173. To watch a live run, start any scenario in a third terminal and select it in the run list. `npm run build` type-checks and builds.
+Open http://localhost:5173. To watch a live run, start any scenario in a third terminal and select it under Traces. `npm run build` type-checks and builds; `npm test` runs the unit tests of the dashboard's aggregation maths.
 
 ## Layout
 

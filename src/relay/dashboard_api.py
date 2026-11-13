@@ -24,9 +24,13 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
-from .analyze import scenario_stats
+import csv
+
+import yaml
+
+from .analyze import _retrieval_scores, scenario_stats
 from .artifacts import list_runs, read_events, read_manifest, read_results_csv, run_paths
-from .metrics import request_rows
+from .metrics import percentile, request_rows
 from .schema import RelayError
 from .simulations import SIM_PREFIX, SimManager, SimRequest
 from .standin.profile import StandinProfile
@@ -35,6 +39,7 @@ LIVE_STALE_S = 30.0       # a run with no end time and no new event for this lon
 ROW_FIELDS = ("start_time", "first_token_ms", "total_ms", "status", "retries", "tokens_in", "tokens_out", "retrieval_setting", "answer_grade")
 
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,160}$")
+_CHUNK_ID_RE = re.compile(r"^[A-Za-z0-9_-]+:(S\d+):\d{1,6}$")
 _ORG_RE = re.compile(r"org_[A-Za-z0-9]{10,}")
 MANIFEST_KEYS = ("run_id", "scenario", "description", "source", "provenance", "kind", "wall_start_utc", "wall_end_utc",
                  "limits", "capacity_rps", "gateway_config", "pipeline_config", "admission", "phases", "controls", "seed",
@@ -115,10 +120,15 @@ def create_app(results_dir: Path, *, root: Path, documented_limits: Mapping[str,
             if key not in picked or str(m.get("wall_start_utc")) >= picked[key][1]:
                 picked[key] = (rid, str(m.get("wall_start_utc")), m)
         out = []
+        meta: dict = {}
         for key, (rid, _, m) in picked.items():
+            summ = m.get("summary") or {}
+            meta[rid] = {"scenario": m.get("scenario"), "source": m.get("source"), "kind": m.get("kind"),
+                         "wall_start_utc": m.get("wall_start_utc"), "peak_queue_len": summ.get("peak_queue_len"),
+                         "peak_inflight": summ.get("peak_inflight"), "incomplete": bool(m.get("incomplete"))}
             for r in read_results_csv(run_paths(results_dir, rid).results):
                 out.append({"run_id": rid, "scenario": m.get("scenario"), "source": m.get("source"), **{k: r.get(k) for k in ROW_FIELDS}})
-        return {"count": len(out), "runs": [v[0] for v in picked.values()], "rows": out}
+        return {"count": len(out), "runs": [v[0] for v in picked.values()], "run_meta": meta, "rows": out}
 
     @app.get("/api/runs/{rid}/events")
     def run_events(rid: str, names: str = "", limit: int = 500) -> list:
@@ -197,8 +207,65 @@ def create_app(results_dir: Path, *, root: Path, documented_limits: Mapping[str,
         for r in rows:
             by.setdefault(r["scenario"], []).append(r)
         src_path = root / "results.sources.json"
+        sources = json.loads(src_path.read_text(encoding="utf-8")) if src_path.is_file() else None
+        model_ttft: dict = {}          # the model's own time to first token per call: from the events, not a results.csv column
+        grade_detail: dict = {}        # how many graded answers came from the model, from a quoted sentence, or were refusals
+        for r in (sources or {}).get("runs_used", []):
+            sc, rid = str(r.get("scenario", "")), str(r.get("run_id", ""))
+            if not sc.startswith("quality_") or not _ID_RE.match(rid):
+                continue
+            p = run_paths(results_dir, rid)
+            if p.events.is_file():
+                vals = [float(e["ttft_ms"]) for e in read_events(p.events) if e.get("event") == "model_first_token" and e.get("ttft_ms") is not None]
+                model_ttft[sc] = {"n": len(vals), "p50": percentile(vals, 50), "p95": percentile(vals, 95)}
+            g = p.root / "grades.csv"
+            if g.is_file():
+                with g.open(newline="", encoding="utf-8") as f:
+                    counts: dict = {}
+                    for gr in csv.DictReader(f):
+                        if (gr.get("detail_grade") or "").strip():
+                            k = f"{gr.get('answer_mode')}:{gr['detail_grade'].strip()}"
+                            counts[k] = counts.get(k, 0) + 1
+                grade_detail[sc] = counts
+        retrieval = None
+        ev_files = sorted((results_dir / "retrieval_eval").glob("retrieval_eval_*.json")) if (results_dir / "retrieval_eval").is_dir() else []
+        if ev_files:
+            retrieval = {"file": ev_files[-1].name, "settings": _retrieval_scores(json.loads(ev_files[-1].read_text(encoding="utf-8")))}
+        settings: dict = {}
+        cfg_path = root / "config" / "relay.yaml"
+        if cfg_path.is_file():
+            try:
+                settings = ((yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}).get("retrieval") or {}).get("settings") or {}
+            except yaml.YAMLError:
+                settings = {}
         return {"available": True, "rows": len(rows), "scenarios": {sc: scenario_stats(rs, prices) for sc, rs in by.items()},
-                "sources": json.loads(src_path.read_text(encoding="utf-8")) if src_path.is_file() else None}
+                "sources": sources, "model_ttft": model_ttft, "grade_detail": grade_detail, "retrieval": retrieval, "settings": settings}
+
+    @app.get("/api/chunks")
+    def chunks(ids: str) -> dict:
+        """The retrieved passages named by a trace (ids like attention:S2:0006), read from data/processed."""
+        wanted = [i for i in ids.split(",") if i][:20]
+        by_setting: dict = {}
+        for i in wanted:
+            m = _CHUNK_ID_RE.match(i)
+            if not m:
+                raise HTTPException(400, f"invalid chunk id {i!r}")
+            by_setting.setdefault(m.group(1), set()).add(i)
+        found: dict = {}
+        for setting, idset in by_setting.items():
+            f = root / "data" / "processed" / f"chunks_{setting}.jsonl"
+            if not f.is_file():
+                continue
+            for line in f.read_text(encoding="utf-8").splitlines():
+                if not line.strip():
+                    continue
+                d = json.loads(line)
+                if d.get("chunk_id") in idset:
+                    found[d["chunk_id"]] = {"chunk_id": d["chunk_id"], "paper": d.get("paper_key"), "setting": d.get("setting_id"),
+                                            "pdf_pages": [d.get("page_start"), d.get("page_end")], "printed_pages": [d.get("printed_start"), d.get("printed_end")],
+                                            "section": d.get("section"), "approx_tokens": d.get("approx_tokens"),
+                                            "text": str(d.get("text", ""))[:900], "clipped": len(str(d.get("text", ""))) > 900}
+        return {"chunks": [found.get(i) or {"chunk_id": i, "missing": True} for i in wanted]}
 
     @app.get("/api/limits")
     def limits() -> dict:

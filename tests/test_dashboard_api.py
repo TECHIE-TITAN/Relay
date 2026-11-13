@@ -110,6 +110,8 @@ def test_rows_endpoint_filters_by_source_origin_and_scope(tmp_path):
     assert c.get("/api/rows?source=bogus").status_code == 400
     r0 = allr["rows"][0]
     assert {"run_id", "scenario", "source", "first_token_ms", "total_ms", "status", "tokens_in"} <= set(r0)
+    meta = allr["run_meta"]["steady_new"]                                # per-run facts the file of rows cannot hold
+    assert meta["scenario"] == "steady" and meta["source"] == "stand-in" and meta["peak_queue_len"] == 3 and "peak_inflight" in meta
 
 
 def test_run_events_endpoint_returns_only_run_level_events_by_name(tmp_path):
@@ -127,6 +129,47 @@ def test_experiments_come_from_results_csv_and_say_when_it_is_missing(tmp_path):
     assert client_for(tmp_path).get("/api/experiments").json()["available"] is False
     e = client_for(tmp_path / "second", with_csv=True).get("/api/experiments").json()
     assert e["available"] is True and e["rows"] == 2 and e["scenarios"]["steady"]["n"] == 2
+
+
+def test_chunks_endpoint_returns_the_retrieved_passages_and_rejects_odd_ids(tmp_path):
+    proc = tmp_path / "data" / "processed"
+    proc.mkdir(parents=True)
+    rec = {"chunk_id": "attention:S2:0006", "paper_key": "attention", "setting_id": "S2", "page_start": 3, "page_end": 3,
+           "printed_start": "3", "printed_end": "3", "section": "3.1 Encoder and Decoder Stacks", "text": "x" * 1000, "approx_tokens": 250}
+    proc.joinpath("chunks_S2.jsonl").write_text(json.dumps(rec) + "\n" + json.dumps({**rec, "chunk_id": "moshi:S2:0001", "paper_key": "moshi", "text": "short"}) + "\n", encoding="utf-8")
+    c = TestClient(create_app(tmp_path / "results", root=tmp_path, documented_limits=DOC, prices={}))
+    got = c.get("/api/chunks?ids=attention:S2:0006,attention:S2:0099,moshi:S2:0001").json()["chunks"]
+    assert [x["chunk_id"] for x in got] == ["attention:S2:0006", "attention:S2:0099", "moshi:S2:0001"]
+    assert got[0]["paper"] == "attention" and got[0]["pdf_pages"] == [3, 3] and got[0]["printed_pages"] == ["3", "3"] and got[0]["section"].startswith("3.1")
+    assert len(got[0]["text"]) == 900 and got[0]["clipped"] is True                  # long passages are clipped, and it says so
+    assert got[1] == {"chunk_id": "attention:S2:0099", "missing": True} and got[2]["text"] == "short" and got[2]["clipped"] is False
+    for bad in ("../etc/passwd", "attention:S2", "attention:../../x:0001", "a b:S2:0001"):
+        assert c.get("/api/chunks", params={"ids": bad}).status_code == 400
+    assert c.get("/api/chunks?ids=attention:S9:0001").json()["chunks"][0]["missing"] is True      # no such setting file: missing, not an error
+
+
+def test_experiments_carry_model_ttft_grade_detail_and_retrieval_scores(tmp_path):
+    rd = tmp_path / "results"
+    mft = [{"request_id": f"q-{i}", "event": "model_first_token", "t_mono": float(i), "ttft_ms": v} for i, v in enumerate((100.0, 200.0, 300.0))]
+    paths = make_run(rd, "quality_S2_1", "quality_S2", "real", [row("q-0", "quality_S2", "real", grade="correct")], kind="sequential", events=mft)
+    (paths.root / "grades.csv").write_text("request_id,answer_mode,detail_grade\nq-0,llm,correct\nq-1,extractive,incorrect\nq-2,refusal,\n", encoding="utf-8")
+    write_results_csv(tmp_path / "results.csv", [row("q-0", "quality_S2", "real", grade="correct")])
+    (tmp_path / "results.sources.json").write_text(json.dumps({"runs_used": [{"scenario": "quality_S2", "run_id": "quality_S2_1", "rows": 1},
+                                                                           {"scenario": "steady", "run_id": "../escape", "rows": 1}]}), encoding="utf-8")
+    ev = rd / "retrieval_eval"
+    ev.mkdir()
+    ev.joinpath("retrieval_eval_20261112T000000Z.json").write_text(json.dumps({"per_question": [
+        {"setting": "S2", "id": "q01", "answerable": True, "abstain": False, "evidence_recall": 1.0, "hit_all": True, "context_tokens_approx": 1000},
+        {"setting": "S4", "id": "q01", "answerable": True, "abstain": False, "evidence_recall": 0.5, "hit_all": False, "context_tokens_approx": 1900},
+    ]}), encoding="utf-8")
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "relay.yaml").write_text("retrieval:\n  settings:\n    S2: {chunk_tokens: 384, overlap_tokens: 48, k: 4, fetch_k: 4, rerank: none}\n", encoding="utf-8")
+    e = TestClient(create_app(rd, root=tmp_path, documented_limits=DOC, prices={})).get("/api/experiments").json()
+    assert e["settings"]["S2"]["chunk_tokens"] == 384 and e["settings"]["S2"]["rerank"] == "none"
+    assert e["model_ttft"] == {"quality_S2": {"n": 3, "p50": 200.0, "p95": 290.0}}                  # unsafe run ids in the sources file are skipped
+    assert e["grade_detail"] == {"quality_S2": {"llm:correct": 1, "extractive:incorrect": 1}}        # ungraded rows are not counted
+    assert e["retrieval"]["file"] == "retrieval_eval_20261112T000000Z.json"
+    assert e["retrieval"]["settings"]["S2"]["recall_sum"] == 1.0 and e["retrieval"]["settings"]["S4"]["hit_all"] == 0
 
 
 def test_limits_keep_the_provenance_labels_and_never_show_the_org_id(tmp_path):

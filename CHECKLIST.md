@@ -25,8 +25,8 @@ Legend: [x] done, [~] written, needs your run or check, [ ] not started. All ite
 - [x] Backend `src/relay/dashboard_api.py` (read-only GET, SSE, provenance labels), tested
 - [~] Dashboard v2 (five pages: Overview, Live Simulation, Experiments, Traces, Limits), in increments:
   - [~] 1. Backend: `src/relay/simulations.py`, simulation routes, `/api/rows`, `/api/runs/{id}/events`, live/interrupted detection (written; run `pytest -q`)
-  - [ ] 2. App shell with five pages and the new Overview (nine KPI cards, five charts, real/stand-in filter)
-  - [ ] 3. Live Simulation page (configuration, pipeline flow, live charts, request inspection, what-if comparison)
+  - [~] 2. App shell with five pages (Live simulation is a placeholder) and the new Overview (nine KPI tiles, five charts, real/stand-in filter); `npm test` covers the aggregation maths
+  - [~] 3. Live Simulation page (configuration form from the options endpoint, pipeline flow derived from the event stream, six live charts, request inspector with a link to the full trace, what-if pairs with a comparison table); `npm test` covers the event-to-state logic and the form arithmetic
   - [ ] 4. Traces lifecycle, Experiments (S4 retrieval-only), Limits (breaker, rate-limit events)
   - (the first frontend, four per-run views, exists in `dashboard/` and builds; it is replaced by increments 2 to 4)
 - [~] `README.md` with reproduction steps: written; check the commands as you run them
