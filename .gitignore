@@ -20,3 +20,7 @@ dashboard/dist/
 
 # OS
 .DS_Store
+
+# Local state of real runs (client-side daily ledger)
+results/ledger_*.json
+results/ledger_*.tmp
