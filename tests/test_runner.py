@@ -30,6 +30,11 @@ def test_shipped_scenarios_parse_and_resolve():
     assert naive["gateway"]["limiter_enabled"] is False and naive["admission"]["queue_cap"] == 100000
     assert naive["limits_scale"] == 5 and naive["name"] == "retry_naive"        # inherited default
     assert resolve_scenario(doc, "quality_S2")["source"] == "real"
+    s2 = resolve_scenario(doc, "quality_S2")                    # the approved S2 study settings
+    assert s2["gateway"]["discretionary_share"] is None and s2["gateway"]["pilot_token_cap"] == 60000
+    assert s2["pilot"] == {"max_actual_per_call": 6000} and s2["max_requests"] == 20 and s2["limits_scale"] == 1
+    assert "max_retries_per_call" not in s2["gateway"]           # retries keep their default cap (2)
+    assert resolve_scenario(doc, "quality_measure")["gateway"]["max_retries_per_call"] == 0   # the pilot keeps no retries
     with pytest.raises(RelayError):
         resolve_scenario(doc, "nope")
 
@@ -134,17 +139,26 @@ def test_sequential_pilot_runs_chosen_questions_in_order_and_stops_before_exceed
     # (a) a cap below one call's full reservation: no call is ever sent, and the refusals are recorded
     scn = {**base, "pilot": {"max_actual_per_call": 10000},
            "gateway": {"max_retries_per_call": 0, "max_attempts_per_request": 1, "pilot_token_cap": 100}}
-    asyncio.run(run_scenario(cfg, scn, run_id="pilot_cap_run", standin_url=standin_url))
-    ev = [json.loads(line) for line in run_paths(cfg.paths.results_dir, "pilot_cap_run").events.read_text(encoding="utf-8").splitlines()]
+    res = asyncio.run(run_scenario(cfg, scn, run_id="pilot_cap_run", standin_url=standin_url))
+    cap_paths = run_paths(cfg.paths.results_dir, "pilot_cap_run")
+    ev = [json.loads(line) for line in cap_paths.events.read_text(encoding="utf-8").splitlines()]
     assert not any(e["event"] == "send" for e in ev)
     assert any(e["event"] == "call_failed" and e["failure"] == "pilot_cap" for e in ev)
     assert any(e["event"] == "cap_check" and e["cap"] == "pilot" and e["reserved"] > 600 for e in ev)
+    # the run stops at the cap and says so: one row, two questions not run, manifest marked incomplete
+    assert res.n_rows == 1
+    stop = [e for e in ev if e["event"] == "pilot_stop"]
+    assert len(stop) == 1 and stop[0]["reason"] == "cap_reached" and len(stop[0]["skipped"]) == 2
+    man = json.loads(cap_paths.manifest.read_text(encoding="utf-8"))
+    assert man["incomplete"] is True and man["stop"]["reason"] == "cap_reached" and man["stop"]["not_run"] == ["q01", "q01"]
     # (b) a call that used far more than estimated stops the pilot after that request
     scn = {**base, "pilot": {"max_actual_per_call": 1}, "gateway": {"max_retries_per_call": 0, "max_attempts_per_request": 1}}
     res = asyncio.run(run_scenario(cfg, scn, run_id="pilot_actual_run", standin_url=standin_url))
     ev = [json.loads(line) for line in run_paths(cfg.paths.results_dir, "pilot_actual_run").events.read_text(encoding="utf-8").splitlines()]
     stops = [e for e in ev if e["event"] == "pilot_stop"]
     assert res.n_rows == 1 and len(stops) == 1 and stops[0]["reason"] == "actual_usage_above_estimate"
+    man = json.loads(run_paths(cfg.paths.results_dir, "pilot_actual_run").manifest.read_text(encoding="utf-8"))
+    assert man["incomplete"] is True and man["stop"]["reason"] == "actual_usage_above_estimate"
     ends = [e for e in ev if e["event"] == "call_end"]
     assert ends and all("reasoning_tokens" in e and e["max_tokens"] == 600 and e["est_prompt_tokens"] > 0 for e in ends)
 

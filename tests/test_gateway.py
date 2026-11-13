@@ -129,6 +129,67 @@ def test_discretionary_share_is_capped_and_retry_fails_fast_when_empty():
     assert len(client.calls) == 3
 
 
+def _discretionary_calls(client, config, n, *, ctx_kw=None, ledger=None):
+    async def go():
+        log = EventLog(None)
+        gw = Gateway(client, config, log, ledger=ledger)
+        outs = []
+        for i in range(n):
+            ctx = ctx_for(log, rid=f"r{i}", **(ctx_kw or {}))
+            outs.append(await gw.call(ctx, MSGS, max_tokens=50, purpose="regenerate", discretionary=True))
+        return gw, log, outs
+    return asyncio.run(go())
+
+
+def test_null_discretionary_share_removes_only_the_retry_throttle():
+    # with a tiny share the second discretionary call in the window is denied ...
+    client = FakeClient([ok_result(), ok_result()])
+    _, _, outs = _discretionary_calls(client, cfg(discretionary_share=0.001), 2)
+    assert outs[0].ok and outs[1].failure == "budget_denied" and len(client.calls) == 1
+    # ... and with share None both go through
+    client = FakeClient([ok_result(), ok_result()])
+    _, _, outs = _discretionary_calls(client, cfg(discretionary_share=None), 2)
+    assert all(o.ok for o in outs) and len(client.calls) == 2
+
+
+def test_null_discretionary_share_still_enforces_the_request_and_token_windows():
+    client = FakeClient([ok_result(), ok_result()])
+    _, _, outs = _discretionary_calls(client, cfg(discretionary_share=None, rpm=1), 2, ctx_kw={"deadline_s": 2.0})
+    assert outs[0].ok and outs[1].failure == "limiter_timeout" and len(client.calls) == 1      # RPM window
+    client = FakeClient([ok_result(), ok_result(), ok_result()])
+    _, _, outs = _discretionary_calls(client, cfg(discretionary_share=None, tpm=200), 3, ctx_kw={"deadline_s": 2.0})
+    assert [o.ok for o in outs] == [True, True, False] and outs[2].failure == "limiter_timeout"   # TPM window
+    assert len(client.calls) == 2
+
+
+def test_null_discretionary_share_still_enforces_retry_caps_and_never_retries_a_daily_429():
+    client = FakeClient([err_result("server_error", 503)] * 3 + [ok_result()])
+    _, _, (out,) = _discretionary_calls(client, cfg(discretionary_share=None, max_retries_per_call=2), 1)
+    assert out.failure == "retries_exhausted" and out.attempts == 3 and len(client.calls) == 3
+    client = FakeClient([err_result("rate_limit_day", 429, retry_after=7200), ok_result()])
+    gw, _, (out,) = _discretionary_calls(client, cfg(discretionary_share=None), 1)
+    assert out.failure == "daily_exhausted" and out.attempts == 1 and len(client.calls) == 1 and gw.ledger.exhausted
+
+
+def test_null_discretionary_share_still_enforces_the_pilot_cap_the_ledger_cap_and_attempt_cap():
+    client = FakeClient([ok_result(), ok_result()])
+    gw, _, outs = _discretionary_calls(client, cfg(discretionary_share=None, pilot_token_cap=150), 2)
+    assert outs[0].ok and outs[1].failure == "pilot_cap" and gw.cap_refused == "pilot" and len(client.calls) == 1
+    ledger = DailyLedger(token_cap=100, request_cap=100)
+    ledger.tokens = 50
+    client = FakeClient([ok_result()])
+    gw, _, (out,) = _discretionary_calls(client, cfg(discretionary_share=None), 1, ledger=ledger)
+    assert out.failure == "ledger_cap" and gw.cap_refused == "daily_ledger" and not client.calls
+    client = FakeClient([ok_result()])
+    async def go():
+        log = EventLog(None)
+        ctx = ctx_for(log)
+        ctx.attempts = 5
+        return await Gateway(client, cfg(discretionary_share=None, max_attempts_per_request=5), log).call(
+            ctx, MSGS, max_tokens=50, purpose="regenerate", discretionary=True)
+    assert asyncio.run(go()).failure == "attempt_cap" and not client.calls
+
+
 def test_naive_policy_has_no_limiter_pause_or_share():
     client = FakeClient([err_result("rate_limit_minute", 429, retry_after=0.2), ok_result()])
     config = cfg(limiter_enabled=False, global_pause=False, discretionary_share=None, honor_retry_after=False)

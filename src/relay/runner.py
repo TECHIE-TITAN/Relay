@@ -302,6 +302,7 @@ async def run_scenario(cfg: Config, scn: Mapping[str, Any], *, run_id: Optional[
 
     clock = time.monotonic
     tasks: list = []
+    run_stop: Optional[dict] = None       # set when the run stopped early; the manifest then says it is incomplete
     sampler = asyncio.ensure_future(_sampler(log, gw, acfg, float(scn.get("state_interval_s", 1.0))))
     control_tasks: list = []
     t_start = clock()
@@ -321,18 +322,27 @@ async def run_scenario(cfg: Config, scn: Mapping[str, Any], *, run_id: Optional[
             pilot = scn.get("pilot") or {}
             pilot_used = 0
             # The token caps (pilot_token_cap, daily ledger) are enforced per model call inside the gateway,
-            # against the full reservation. Here we only stop the pilot when a call used far more than estimated.
+            # against the full reservation. The runner stops the run (and marks it incomplete) when a call was
+            # refused by one of those caps, or when one request used far more than estimated.
             for i, q in enumerate(order[:n_planned]):
                 ctx = make_ctx(i, q)
                 log.emit(ctx.request_id, "launch", "launch", lag_ms=0.0)
-                await pipe.handle(ctx, q.text)
+                res = await pipe.handle(ctx, q.text)
                 if pilot:
                     spent = ctx.tokens_in + ctx.tokens_out + ctx.tokens_unaccounted_est
                     pilot_used += spent
-                    if spent > int(pilot["max_actual_per_call"]):
-                        log.emit(None, "runner", "pilot_stop", reason="actual_usage_above_estimate", used=pilot_used,
-                                 spent_by_last=spent, limit=int(pilot["max_actual_per_call"]),
-                                 skipped=[x.id for x in order[i + 1:n_planned]])
+                    why = None
+                    if gw.cap_refused:              # includes a regeneration the cap refused, which falls back silently
+                        why = "cap_reached"
+                    elif spent > int(pilot["max_actual_per_call"]):
+                        why = "actual_usage_above_estimate"
+                    if why:
+                        not_run = [x.id for x in order[i + 1:n_planned]]
+                        run_stop = {"reason": why, "after_request": ctx.request_id, "question_id": q.id,
+                                    "tokens_used_by_run": pilot_used, "spent_by_last": spent,
+                                    "per_request_limit": int(pilot["max_actual_per_call"]), "not_run": not_run}
+                        log.emit(None, "runner", "pilot_stop", reason=why, used=pilot_used, spent_by_last=spent,
+                                 limit=int(pilot["max_actual_per_call"]), skipped=not_run)
                         break
         else:
             for i, at in enumerate(arrivals):
@@ -369,7 +379,8 @@ async def run_scenario(cfg: Config, scn: Mapping[str, Any], *, run_id: Optional[
 
     # --- artifacts
     events = read_events(paths.events)
-    manifest_now = {**manifest, "wall_end_utc": wall_end.isoformat(), "standin_stats_at_end": standin_stats}
+    manifest_now = {**manifest, "wall_end_utc": wall_end.isoformat(), "standin_stats_at_end": standin_stats,
+                    "incomplete": run_stop is not None, "stop": run_stop}
     rows = request_rows(events, manifest_now)
     write_results_csv(paths.results, csv_rows(rows))
     inv_params = {

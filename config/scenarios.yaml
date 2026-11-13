@@ -121,14 +121,20 @@ scenarios:
   # ---- real-service quality runs: sequential, one question at a time. NOT load tests. ----
   # They spend real quota. They refuse to start without --allow-real, and the daily ledger caps the spend.
   quality_S2:
-    description: "20 questions once each on the real model, retrieval setting S2."
+    description: "20 questions once each on the real model, retrieval setting S2. Regeneration on, study cap 60K tokens."
     source: real
     kind: sequential
     setting: S2
     deadline_s: 90
     limits_scale: 1
     max_requests: 20
-    gateway: {call_timeout_s: 40.0, first_token_timeout_s: 30.0}
+    # discretionary_share: null only removes the 15% throttle on retries/regenerations. In a sequential run nothing
+    # competes with them, and the throttle would otherwise allow about one regeneration per minute. The TPM/RPM windows,
+    # daily ledger, per-call reservation checks, retry caps and the 60K study cap all stay enforced.
+    # pilot_token_cap is the study cap (spent + outstanding + full reservation, checked before every model call).
+    # pilot: the run stops, marked incomplete, when a cap refuses a call or one request spends over 6,000 tokens.
+    gateway: {call_timeout_s: 40.0, first_token_timeout_s: 30.0, discretionary_share: null, pilot_token_cap: 60000}
+    pilot: {max_actual_per_call: 6000}
   quality_S3:
     description: "As quality_S2 with retrieval setting S3."
     source: real

@@ -228,6 +228,7 @@ class Gateway:
         self.ledger = ledger or DailyLedger(cfg.daily_token_cap, cfg.daily_request_cap)
         self.pilot_spent = 0                # tokens this gateway has actually spent (for pilot_token_cap)
         self._held = 0                      # full reservations of calls admitted but not yet finished
+        self.cap_refused: Optional[str] = None   # "pilot" / "daily_ledger" once a call was refused by a token cap
         self.rng = rng or random.Random(0)
         self.base_rpm = float(cfg.rpm)
         self.base_tpm = float(cfg.tpm)
@@ -417,10 +418,12 @@ class Gateway:
             if cfg.pilot_token_cap is not None and self.pilot_spent + held + reserved > cfg.pilot_token_cap:
                 ctx.emit("cap_check", cap="pilot", spent=self.pilot_spent, outstanding=held, reserved=reserved,
                          limit=cfg.pilot_token_cap)
+                self.cap_refused = self.cap_refused or "pilot"
                 return fail("pilot_cap")
             if self.ledger.tokens + held + reserved > self.ledger.token_cap:
                 ctx.emit("cap_check", cap="daily_ledger", spent=self.ledger.tokens, outstanding=held,
                          reserved=reserved, limit=self.ledger.token_cap)
+                self.cap_refused = self.cap_refused or "daily_ledger"
                 return fail("ledger_cap")
             self._held += reserved
             disc = discretionary or retries_here > 0

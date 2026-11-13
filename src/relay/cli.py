@@ -355,6 +355,51 @@ def cmd_summarize(args: argparse.Namespace) -> int:
     return 0
 
 
+def _graded_run(args: argparse.Namespace):
+    """Resolve an explicitly named run (no 'latest': grading must never land on the wrong run by accident)."""
+    from .artifacts import read_events, read_manifest, run_paths
+    from .eval_retrieval import load_questions as _load_q
+    cfg = load_config()
+    paths = run_paths(cfg.paths.results_dir, args.run)
+    if not paths.manifest.is_file():
+        raise RelayError(f"run '{args.run}' not found under results/runs")
+    manifest = read_manifest(paths.manifest)
+    questions = {q.id: q for q in _load_q(cfg.paths.questions, [p.key for p in cfg.papers])}
+    return cfg, paths, manifest, read_events(paths.events), questions
+
+
+def cmd_grade_sheet(args: argparse.Namespace) -> int:
+    from .grading import build_sheet, write_sheet
+    _, paths, manifest, events, questions = _graded_run(args)
+    sheet_path = paths.root / "grades.csv"
+    if sheet_path.exists() and not args.force:
+        raise RelayError(f"{sheet_path} already exists (your grades may be in it). Use --force to overwrite.")
+    rows = build_sheet(manifest, events, questions)
+    write_sheet(sheet_path, rows)
+    print(f"wrote {sheet_path} with {len(rows)} rows. Fill the detail_grade column, then run apply-grades.")
+    print("detail_grade values: correct, partial, incorrect (answerable, answered); wrong_refusal (answerable, refused);")
+    print("                     correct_refusal (unanswerable, refused); answered_unanswerable (unanswerable, answered)")
+    if manifest.get("incomplete"):
+        print(f"NOTE: this run is INCOMPLETE ({(manifest.get('stop') or {}).get('reason')}); "
+              f"{len((manifest.get('stop') or {}).get('not_run') or [])} questions were not run.")
+    return 0
+
+
+def cmd_apply_grades(args: argparse.Namespace) -> int:
+    import json
+    from .artifacts import write_manifest
+    from .grading import apply_grades, check_gradable_run, read_sheet
+    _, paths, manifest, _events, _questions = _graded_run(args)
+    check_gradable_run(manifest)
+    block = apply_grades(paths.results, read_sheet(paths.root / "grades.csv"), allow_partial=args.allow_partial)
+    write_manifest(paths.manifest, {**manifest, "grading": block})
+    print(f"graded {block['n_graded']} answers ({block['n_ungraded_ok']} still ungraded)")
+    print("answer_grade:", json.dumps(block["answer_grade_counts"], sort_keys=True))
+    print("by answer mode and detail:", json.dumps(block["by_mode_and_detail"], sort_keys=True))
+    print(f"results.csv updated; the original is kept as {paths.root / 'results.ungraded.csv'}")
+    return 0
+
+
 def cmd_probe(args: argparse.Namespace) -> int:
     from .gateway import DailyLedger, GatewayConfig
     from .llm_client import LLMClient
@@ -473,6 +518,16 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--stream-options", action="store_true", help="send stream_options.include_usage")
     s.add_argument("--base-url", help="TEST HOOK: probe this OpenAI-compatible URL (a local stand-in) instead of the real service")
     s.set_defaults(func=cmd_probe)
+
+    s = sub.add_parser("grade-sheet", help="export a grading sheet for a finished REAL quality run")
+    s.add_argument("--run", required=True, help="run id (explicit; pilots and stand-in runs are refused)")
+    s.add_argument("--force", action="store_true", help="overwrite an existing grades.csv")
+    s.set_defaults(func=cmd_grade_sheet)
+
+    s = sub.add_parser("apply-grades", help="merge your grades.csv into the run's results.csv (answer_grade)")
+    s.add_argument("--run", required=True)
+    s.add_argument("--allow-partial", action="store_true", help="allow answers that are still ungraded")
+    s.set_defaults(func=cmd_apply_grades)
 
     s = sub.add_parser("summarize", help="summary and invariants of a finished run")
     s.add_argument("--run", default="latest", help="run id, or 'latest'")
