@@ -18,7 +18,7 @@ from typing import Any, Mapping
 class StandinProfile:
     seed: int = 1
     # Latency (SIMULATED).
-    # CALIBRATED against the real probe (results/probe_real.jsonl, n=40 calls, tiny to ~1.5K-token
+    # CALIBRATED against the real probe (results/probe_real.jsonl, n=31 successful latency and concurrency calls, tiny to ~1.5K-token
     # prompts): median TTFT ~580 ms, max 2.1 s. The sigma is a SIMULATED fit to that spread.
     ttft_median_ms: float = 580.0      # time to first content token, lognormal median
     ttft_sigma: float = 0.45           # lognormal sigma (SIMULATED fit; the real tail is thin data)

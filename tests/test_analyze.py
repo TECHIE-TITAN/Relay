@@ -71,6 +71,17 @@ def test_analyze_never_modifies_run_folders_and_writes_a_traceable_sources_file(
     assert all(r["request_id"].startswith(used["run_id"]) for r in rows)    # a row names the folder it came from
 
 
+def test_dashboard_simulations_are_never_merged_into_the_evidence(tmp_path):
+    rd = tmp_path / "results"
+    make_run(rd, "steady_1", "steady", "stand-in", [row("steady_1-0000", "steady", "stand-in")])
+    make_run(rd, "sim_steady_x", "sim_steady", "stand-in", [row("sim_steady_x-0000", "sim_steady", "stand-in")], wall="2026-11-13T12:00:00+00:00")
+    assert set(select_runs(rd)) == {"steady"}
+    res, rows, _ = run_analyze(tmp_path)
+    assert [r["request_id"] for r in rows] == ["steady_1-0000"]
+    src = json.loads((tmp_path / "results.sources.json").read_text(encoding="utf-8"))
+    assert [x["run_id"] for x in src["runs_left_out"]] == ["sim_steady_x"] and "dashboard" in src["runs_left_out"][0]["reason"]
+
+
 def test_probe_calls_become_real_rows_with_the_429_as_rate_limited(tmp_path):
     p = tmp_path / "probe_real.jsonl"
     p.write_text("\n".join(json.dumps(d) for d in [
@@ -127,6 +138,25 @@ def test_quality_table_uses_the_four_grades_and_flags_ungraded_or_incomplete_run
     assert "(closed loop)" in md
     assert res["model_ttft"]["quality_S2"] == {"n": 3, "p50": 200.0, "p95": 290.0}      # from events, type 7
     assert "| 200.0 / 290.0 |" in md and res["model_ttft"]["quality_S1"]["n"] == 0
+
+
+def test_slowest_by_retrying_picks_the_request_that_retried_and_none_when_nobody_did():
+    def req(rid, total, retry_ms):
+        ev = [{"request_id": rid, "event": "arrive", "t_mono": 0.0},
+              {"request_id": rid, "event": "send", "t_mono": 0.0},
+              {"request_id": rid, "event": "call_end", "t_mono": 0.1, "ok": True, "duration_ms": 100.0}]
+        if retry_ms:
+            ev.append({"request_id": rid, "event": "retry_sleep_start", "t_mono": 0.1, "sleep_ms": retry_ms})
+            ev.append({"request_id": rid, "event": "retry_sleep_end", "t_mono": 0.1 + retry_ms / 1000})
+        ev.append({"request_id": rid, "event": "done", "t_mono": total / 1000, "status": "ok", "total_ms": total,
+                   "first_token_ms": total, "retries": 1 if retry_ms else 0, "tokens_in": 1, "tokens_out": 1,
+                   "retrieval_setting": "S2", "question_id": "q01", "answer_mode": "llm"})
+        return ev
+    man = {"scenario": "x", "source": "stand-in", "wall_start_utc": "2026-11-13T10:00:00+00:00"}
+    ev = req("slow-no-retry", 9000.0, 0) + req("retried", 3000.0, 500.0)
+    assert slowest_request(ev, man)["request_id"] == "slow-no-retry"                          # by total time
+    assert slowest_request(ev, man, by="retrying")["request_id"] == "retried"                 # by time spent retrying
+    assert slowest_request(req("a", 1000.0, 0), man, by="retrying") is None
 
 
 def test_slowest_request_split_says_whether_the_delay_came_before_the_first_token():

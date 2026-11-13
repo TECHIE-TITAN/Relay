@@ -24,3 +24,7 @@ dashboard/dist/
 # Local state of real runs (client-side daily ledger)
 results/ledger_*.json
 results/ledger_*.tmp
+
+# Simulations started from the dashboard (stand-in, not part of the evidence)
+results/runs/sim_*/
+results/.sim/

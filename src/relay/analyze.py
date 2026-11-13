@@ -71,7 +71,7 @@ def select_runs(results_dir: Path, exclude: frozenset = EXCLUDED_SCENARIOS) -> d
             continue
         m = read_manifest(paths.manifest)
         sc = m.get("scenario")
-        if sc in exclude or not m.get("wall_start_utc"):
+        if sc in exclude or str(sc).startswith("sim_") or not m.get("wall_start_utc"):   # sim_* = started from the dashboard
             continue
         if sc not in found or m["wall_start_utc"] >= found[sc][1]["wall_start_utc"]:
             found[sc] = (rid, m)
@@ -131,12 +131,15 @@ def scenario_stats(rows: Sequence[Mapping[str, Any]], prices: Mapping[str, float
     }
 
 
-def slowest_request(events: Sequence[Mapping[str, Any]], manifest: Mapping[str, Any]) -> Optional[dict]:
-    """The slowest successful request of a run, split into waiting / working / retrying, with its event timeline."""
+def slowest_request(events: Sequence[Mapping[str, Any]], manifest: Mapping[str, Any], by: str = "total") -> Optional[dict]:
+    """A slow successful request of a run, split into waiting / working / retrying, with its event timeline.
+    by="total": the one with the largest total time. by="retrying": the one that spent the longest retrying (None if none retried)."""
     rows = [r for r in request_rows(events, manifest) if r["status"] == "ok" and r["first_token_ms"] is not None]
+    if by == "retrying":
+        rows = [r for r in rows if r["retrying_ms"] > 0]
     if not rows:
         return None
-    r = max(rows, key=lambda x: x["total_ms"])
+    r = max(rows, key=lambda x: x["retrying_ms"] if by == "retrying" else x["total_ms"])
     evs = [e for e in events if e.get("request_id") == r["request_id"]]
     t0 = next((e["t_mono"] for e in evs if e["event"] == "arrive"), evs[0]["t_mono"])
     keep = {"arrive", "slot_acquired", "limiter_wait_end", "send", "call_end", "retry_sleep_start", "pause_start",
@@ -184,7 +187,8 @@ def write_sources(results_dir: Path, out_csv: Path, chosen: Mapping[str, Any], n
             continue
         m = read_manifest(run_paths(results_dir, rid).manifest)
         sc = m.get("scenario")
-        why = ("pilot run, kept as evidence and never merged" if sc in EXCLUDED_SCENARIOS
+        why = ("simulation started from the dashboard (stand-in), not part of the evidence" if str(sc).startswith("sim_")
+               else "pilot run, kept as evidence and never merged" if sc in EXCLUDED_SCENARIOS
                else f"superseded by a later run of scenario '{sc}'" if sc in chosen else "no results.csv")
         left_out.append({"run_id": rid, "scenario": sc, "reason": why})
     doc = {"generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "results_csv": out_csv.name,
@@ -230,13 +234,20 @@ def analyze(results_dir: Path, out_csv: Path, out_md: Path, *, probe_path: Optio
         vals = [float(e["ttft_ms"]) for e in evs if e.get("event") == "model_first_token" and e.get("ttft_ms") is not None]
         model_ttft[sc] = {"n": len(vals), "p50": _pct(vals, 50), "p95": _pct(vals, 95)}
 
-    slow = None
+    slow = slow_retry = slow_real = None
     for sc, (rid, m) in chosen.items():
-        if m.get("source") != "stand-in":
-            continue
-        cand = slowest_request(read_events(run_paths(results_dir, rid).events), m)
-        if cand and (slow is None or cand["total_ms"] > slow["total_ms"]):
-            slow = {**cand, "scenario": sc, "run_id": rid}
+        evs = read_events(run_paths(results_dir, rid).events)
+        if m.get("source") == "stand-in":
+            cand = slowest_request(evs, m)
+            if cand and (slow is None or cand["total_ms"] > slow["total_ms"]):
+                slow = {**cand, "scenario": sc, "run_id": rid}
+            cand = slowest_request(evs, m, by="retrying")
+            if cand and (slow_retry is None or cand["retrying_ms"] > slow_retry["retrying_ms"]):
+                slow_retry = {**cand, "scenario": sc, "run_id": rid}
+        elif sc.startswith("quality_"):
+            cand = slowest_request(evs, m)
+            if cand and (slow_real is None or cand["total_ms"] > slow_real["total_ms"]):
+                slow_real = {**cand, "scenario": sc, "run_id": rid}
 
     retrieval = None
     if eval_dir and eval_dir.is_dir():
@@ -248,7 +259,8 @@ def analyze(results_dir: Path, out_csv: Path, out_md: Path, *, probe_path: Optio
               "meta": {sc: {"kind": m.get("kind"), "source": m.get("source"),
                             "peak_queue_len": (m.get("summary") or {}).get("peak_queue_len"),
                             "incomplete": bool(m.get("incomplete"))} for sc, (_r, m) in chosen.items()},
-              "n_rows": len(merged), "warnings": warnings, "slowest": slow, "retrieval": retrieval, "model_ttft": model_ttft,
+              "n_rows": len(merged), "warnings": warnings, "slowest": slow, "slowest_retry": slow_retry,
+              "slowest_real": slow_real, "retrieval": retrieval, "model_ttft": model_ttft,
               "settings_desc": dict(settings_desc), "prices": dict(prices)}
     out_md.parent.mkdir(parents=True, exist_ok=True)
     out_md.write_text(render_markdown(result), encoding="utf-8")
@@ -319,8 +331,9 @@ def render_markdown(res: Mapping[str, Any]) -> str:
     L += ["", "## Table 2b: Outcomes, same rows", "",
           "Tokens per answer = provider-reported tokens of answers released, divided by answers released (free refusals count as 0). "
           "Cost is NOTIONAL (the free tier bills nothing): tokens x the configured price per million. "
-          "Peak queue length is not a results.csv column; it comes from the run's manifest. Correctly refused % is over graded requests.", "",
-          "| Scenario | Succeeded % | Rate-limited % | Timed out or given up % | Error % | Retries per request | Peak queue length | Tokens per answer | Cost per 1,000 answers (USD, notional) | Correctly refused % |",
+          "Peak queue length is not a results.csv column; it comes from the run's manifest. Refused correctly is a percentage of ALL graded "
+          "requests (in the 20-question runs it includes the 5 unanswerable questions, so 25.0 means every unanswerable question was refused).", "",
+          "| Scenario | Succeeded % | Rate-limited % | Timed out or given up % | Error % | Retries per request | Peak queue length | Tokens per answer | Cost per 1,000 answers (USD, notional) | Refused correctly (% of all requests) |",
           "|---|---|---|---|---|---|---|---|---|---|"]
     for sc in names:
         s = st[sc]
@@ -357,9 +370,13 @@ def render_markdown(res: Mapping[str, Any]) -> str:
             r = rv[key]
             L.append(f"| {key}: {res['settings_desc'].get(key, key)} | {r['answerable']} | {r['recall_sum'] / max(1, r['answerable']):.2f} | "
                      f"{r['hit_all']} | {r['answerable_abstained']} | {r['unanswerable_reach_model']} | {r['ctx'] / max(1, r['reach']):.0f} |")
-    s = res["slowest"]
-    if s:
-        L += ["", f"## Slowest successful stand-in request ({s['scenario']}, run {s['run_id']}, {s['request_id']})", "",
+    for key, title in (("slowest_real", "Slowest successful REAL request (a quality run: the wait is for the token limit)"),
+                       ("slowest_retry", "Stand-in request that spent the longest retrying (SIMULATED)"),
+                       ("slowest", "Slowest successful stand-in request (SIMULATED)")):
+        s = res.get(key)
+        if not s:
+            continue
+        L += ["", f"## {title}: {s['scenario']}, run {s['run_id']}, {s['request_id']}", "",
               f"Total {s['total_ms']:.1f} ms; first token at {s['first_token_ms']:.1f} ms; **{s['after_first_token_ms']:.1f} ms after the first token** "
               f"(the answer is buffered and verified before release, so the delay is before the first token).",
               f"waiting {s['waiting_ms']:.1f} ms, working {s['working_ms']:.1f} ms, retrying {s['retrying_ms']:.1f} ms, "

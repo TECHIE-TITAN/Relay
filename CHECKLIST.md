@@ -1,45 +1,45 @@
 # Deliverables checklist (updated as we go)
 
-Legend: [x] done, [~] written / in progress, [ ] not started. P0 = must have, P1 = should have, P2 = if time allows.
-Execution order (agreed): S2 alone -> grade S2 -> check ledger -> S1 -> grade -> check ledger -> S3 -> grade -> stand-in scenarios (nothing else running) -> `analyze` -> report -> dashboard.
-Quota: ledger 22.5K of the 160K cap used before the S2 study; the caps S2 60K + S1 30K + S3 55K = 145K do NOT fit in the 137.5K left, so `run` refuses a cap that does not fit and `--token-cap N` lowers it. Check with `python -m relay.cli ledger`.
+Legend: [x] done, [~] written, needs your run or check, [ ] not started. All items below are required (dashboard and README were promoted to required).
 
-## A. Real-service runs (spend quota; the author runs them)
-- [x] P0 Real probe: single, latency, concurrency, limit stages (`results/probe_real.jsonl`) -> Table 1
-- [x] P0 Three pilot runs (kept untouched; checksums in `results/pilot_checksums.sha256`)
-- [x] S2 first run (`quality_S2_20261113T200937Z`): ladder was ON, contaminated (see DESIGN 17); kept as evidence for "retrieval when the limit is close", superseded. Cost 20.9K tokens
-- [ ] P0 S2 quality study RERUN with the ladder off (`quality_S2`, cap 60K)
-- [ ] P0 S1 quality study (`quality_S1`, cap 30K, lowered if the ledger requires)
-- [ ] P0 S3 quality study (`quality_S3`, cap 55K, lowered if the ledger requires)
-- [ ] P1 S4 scored retrieval-only (`eval-retrieval`); model metrics "not measured"
-- [ ] P0 Manual grading of S2, S1, S3 (`grade-sheet --prefill-refusals`, fill `detail_grade`, `apply-grades`)
+## A. Real-service runs
+- [x] Real probe (single, latency, concurrency, limit) -> Table 1
+- [x] Three pilots (untouched; checksums in `results/pilot_checksums.sha256`)
+- [x] First S2 run (ladder on, contaminated; kept as evidence, superseded)
+- [x] S2, S1, S3 quality runs, graded (grades proposed by the assistant, applied by the author)
+- [x] S4 scored retrieval-only (Table 3b)
 
-## B. Stand-in load runs (free; calibrated profile; run ALONE, after the real runs)
-- [ ] P0 smoke, steady, burst, sustained_overload, limit_halved, daily_exhausted (SIMULATED)
-- [ ] P0 retry_naive vs retry_budgeted, and the `_hot` versions
-- [ ] P1 limit_halved_hot
+## B. Stand-in load runs
+- [x] smoke, steady, burst, sustained_overload, limit_halved, limit_halved_hot, daily_exhausted, retry_naive, retry_budgeted, retry_naive_hot, retry_budgeted_hot
 
 ## C. Analysis
-- [~] P0 `analyze`: merges the latest run of each scenario + probe into `results.csv`; writes `results.sources.json` (run ids, checksums, runs left out and why); run folders are only read (tests written, not yet run)
-- [~] P0 Tables 2a, 2b, 3, 3b in `report/tables.md`; Table 1 is written by hand in the report from the probe
-- [~] P0 Slowest-request split (waiting / working / retrying, before or after first token) in `report/tables.md`
-- [ ] P0 One number nobody could have guessed (candidates in the report skeleton)
+- [x] `analyze`: `results.csv` (899 rows), `results.sources.json`, `report/tables.md`
 
-## D. Report (2 pages) and submission pieces
-- [~] P0 Report skeleton `report/report.md` with all headings in order; Table 1 and the naive-retriever section drafted from evidence; results sections wait for runs
-- [ ] P0 Cut the report to 2 pages
-- [ ] P0 Vaani feedback (YOURS)
-- [~] P0 Conversation history: `export-conversation` written (tests written, not yet run); run it last so it includes everything
-- [ ] P0 Three prompts that mattered, one thing the assistant got wrong, one overrule, what is distinctly yours (YOURS; candidates are in a comment at the end of the report)
-- [ ] P0 No API key anywhere in the submission; `.env` is git-ignored
-- [ ] P1 Dashboard (FastAPI read-only + React/TS/Tailwind/Recharts: Overview, Experiments, Traces, Limits); only after the evidence and report are in good shape
-- [ ] P1 README with reproduction steps (README.md is currently only "# Relay")
-- [ ] P0 Final commit including `results/runs` (raw results are required), `results.csv`, `results.sources.json`, `report/`
+## D. Report
+- [x] Content written, with the author's sections and Vaani text
+- [~] 2-page PDF: compile `report/report_2page.tex` (Overleaf or pdflatex) or render the markdown to HTML and print; confirm exactly 2 pages
+- [ ] `python -m relay.cli export-conversation`, then skim `report/conversation_history.md`
+- [ ] No API key in the repo: `grep -rn "gsk_" --exclude-dir=.venv --exclude-dir=.git --exclude-dir=node_modules .` prints nothing
 
-## Known gaps to state honestly in the report
-- "Requests in flight at once" was only probed up to 4; no limit found there.
-- Peak queue length is not a `results.csv` column (it comes from the run manifests); say so in Table 2b.
-- Daily-limit behaviour is SIMULATED; never triggered on the real service by design.
-- TPM accounting (reservation versus actual tokens) is unresolved: two observations disagreed.
-- Extractive fallback is weak; three post-pilot rule changes (DESIGN.md section 16) were made after seeing two pilot samples.
-- Stand-in runs made before the calibration (old TTFT and slowdown) are superseded by the reruns and left on disk.
+## E. Dashboard and README (required)
+- [x] Backend `src/relay/dashboard_api.py` (read-only GET, SSE, provenance labels), tested
+- [~] Dashboard v2 (five pages: Overview, Live Simulation, Experiments, Traces, Limits), in increments:
+  - [~] 1. Backend: `src/relay/simulations.py`, simulation routes, `/api/rows`, `/api/runs/{id}/events`, live/interrupted detection (written; run `pytest -q`)
+  - [ ] 2. App shell with five pages and the new Overview (nine KPI cards, five charts, real/stand-in filter)
+  - [ ] 3. Live Simulation page (configuration, pipeline flow, live charts, request inspection, what-if comparison)
+  - [ ] 4. Traces lifecycle, Experiments (S4 retrieval-only), Limits (breaker, rate-limit events)
+  - (the first frontend, four per-run views, exists in `dashboard/` and builds; it is replaced by increments 2 to 4)
+- [~] `README.md` with reproduction steps: written; check the commands as you run them
+
+## F. Final
+- [ ] `pytest -q` green
+- [ ] Final commit: `results/runs`, `results.csv`, `results.sources.json`, `report/` (with the PDF), `dashboard/` (not `node_modules` or `dist`), README; leave out `.claude/` and `test.sh`
+
+## Known gaps stated in the report
+- Requests in flight probed only up to 4; no limit found.
+- Peak queue length is not a `results.csv` column (from the run manifests).
+- The daily limit is SIMULATED; never triggered on the real service.
+- TPM accounting (reservation vs actual) unresolved; the ledger assumes a UTC day reset while the headers suggest a rolling refill.
+- Extractive fallback is weak; three post-pilot rule changes were made after two pilot samples; the ladder was off in the quality runs.
+- 20 questions, one run per setting.
+- Not built, deliberately: stage-priority/EDF scheduling, an LLM verifier.

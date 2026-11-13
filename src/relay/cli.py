@@ -485,6 +485,36 @@ def cmd_export_conversation(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_dashboard_api(args: argparse.Namespace) -> int:
+    import uvicorn
+
+    from .dashboard_api import create_app
+    cfg = load_config()
+    lim = cfg.model().limits
+    m = cfg.model()
+    app = create_app(cfg.paths.results_dir, root=cfg.root,
+                     documented_limits={"rpm": lim.rpm, "rpd": lim.rpd, "tpm": lim.tpm, "tpd": lim.tpd, "model": m.id},
+                     prices={"in": m.price_in_per_mtok, "out": m.price_out_per_mtok},
+                     enable_simulations=not args.read_only)
+    mode = "read-only (GET only)" if args.read_only else "history is read-only; the only write is starting a STAND-IN simulation"
+    print(f"dashboard API on http://{args.host}:{args.port}: {mode}; no provider access")
+    uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
+    return 0
+
+
+def cmd_render_report(args: argparse.Namespace) -> int:
+    from .render_report import render_file
+    cfg = load_config()
+    src = args.src or (cfg.root / "report" / "report_2page.md")
+    out = args.out or src.with_suffix(".html")
+    if not src.is_file():
+        raise RelayError(f"{src} not found")
+    info = render_file(src, out)
+    print(f"wrote {out}  ({info['words']} words, {info['chars']} characters of markdown)")
+    print("Open it in a browser and print to PDF (paper A4, margins Default, scale 100%) to see the real page count.")
+    return 0
+
+
 def cmd_probe(args: argparse.Namespace) -> int:
     from .gateway import DailyLedger, GatewayConfig
     from .llm_client import LLMClient
@@ -620,6 +650,17 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--proposals", type=_path_arg,
                    help="CSV (request_id, detail_grade, note) of proposed grades; fills blank cells only and marks them assistant-proposed")
     s.set_defaults(func=cmd_apply_grades)
+
+    s = sub.add_parser("dashboard-api", help="serve the read-only dashboard API (GET only, no provider access)")
+    s.add_argument("--host", default="127.0.0.1")
+    s.add_argument("--port", type=int, default=8090)
+    s.add_argument("--read-only", action="store_true", help="also disable starting stand-in simulations from the dashboard")
+    s.set_defaults(func=cmd_dashboard_api)
+
+    s = sub.add_parser("render-report", help="render the 2-page write-up (markdown) to print-ready HTML")
+    s.add_argument("--src", type=_path_arg, help="default: report/report_2page.md")
+    s.add_argument("--out", type=_path_arg)
+    s.set_defaults(func=cmd_render_report)
 
     s = sub.add_parser("export-conversation", help="export the real assistant conversation history to report/conversation_history.md")
     s.add_argument("--sessions-dir", type=_path_arg, help="folder with the session *.jsonl files (default: this project's folder under ~/.claude/projects)")
