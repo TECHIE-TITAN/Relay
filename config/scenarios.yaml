@@ -87,6 +87,37 @@ scenarios:
     phases: [{start_s: 0, duration_s: 180, rate_x: 0.8}]
     standin: {p_slow: 0.15, slow_factor: 6.0}
 
+  # Added after the first runs showed the 0.7x / 0.8x scenarios never reached a limit (about a third of
+  # requests are refused with no model call, so real model load is well below rate_x). Same mechanics, more load.
+  limit_halved_hot:
+    description: "As limit_halved at 1.0x capacity, so the halved limit is actually exceeded."
+    phases: [{start_s: 0, duration_s: 240, rate_x: 1.0}]
+    controls:
+      - {at_s: 90, set: {rpm: "x0.5", tpm: "x0.5"}}
+
+  retry_naive_hot:
+    description: "retry_naive at 1.6x capacity: do timeouts plus immediate retries now push the system into the limit?"
+    phases: [{start_s: 0, duration_s: 180, rate_x: 1.6}]
+    standin: {p_slow: 0.15, slow_factor: 6.0}
+    gateway:
+      limiter_enabled: false
+      global_pause: false
+      discretionary_share: null
+      call_timeout_s: 2.0
+      first_token_timeout_s: null
+      max_retries_per_call: 3
+      max_attempts_per_request: 4
+      backoff_base_s: 0.05
+      backoff_cap_s: 0.2
+      honor_retry_after: false
+    admission: {n_inflight: 1000, queue_cap: 100000, newest_first_after_s: 1000000.0, min_service_s: 0.0, estimate_check: false}
+    pipeline: {ladder_enabled: false}
+
+  retry_budgeted_hot:
+    description: "Same load and stand-in as retry_naive_hot, with the budgeted policy."
+    phases: [{start_s: 0, duration_s: 180, rate_x: 1.6}]
+    standin: {p_slow: 0.15, slow_factor: 6.0}
+
   # ---- real-service quality runs: sequential, one question at a time. NOT load tests. ----
   # They spend real quota. They refuse to start without --allow-real, and the daily ledger caps the spend.
   quality_S2:
