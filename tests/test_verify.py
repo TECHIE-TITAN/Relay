@@ -21,6 +21,14 @@ def test_grounded_cited_answer_passes():
     assert r.passed and not r.refusal and r.failures == [] and r.cited == ["S1"]
 
 
+def test_failures_come_with_the_offending_text_for_diagnosis():
+    r = verify_v0("The encoder has 7 identical layers [S1].", SOURCES)
+    assert "ungrounded_number" in r.failures and any("7" in d and d.startswith("ungrounded_number") for d in r.details)
+    r = verify_v0("The encoder has identical layers.", SOURCES)
+    assert any(d.startswith("uncited_claim") and "identical layers" in d for d in r.details)
+    assert verify_v0("The encoder is a stack of N = 6 identical layers [S1].", SOURCES).details == []
+
+
 def test_invented_citation_fails():
     r = verify_v0("The encoder is a stack of identical layers [S7].", SOURCES)
     assert not r.passed and "invalid_citation" in r.failures and not r.checks["citation_validity"]

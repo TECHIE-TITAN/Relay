@@ -56,6 +56,7 @@ class V0Result:
     checks: dict = field(default_factory=dict)          # check name -> passed
     cited: list = field(default_factory=list)
     ms: float = 0.0
+    details: list = field(default_factory=list)         # human-readable "code: offending text", for diagnosis and grading
 
 
 def split_sentences(text: str) -> list:
@@ -87,9 +88,13 @@ def verify_v0(answer: str, sources: Mapping[str, Chunk], *, support_threshold: f
     if not sentences:
         return V0Result(False, False, ["empty_answer"], {k: False for k in checks}, [], (time.perf_counter() - t0) * 1000)
 
-    def bad(check: str, code: str) -> None:
+    details: list = []
+
+    def bad(check: str, code: str, detail: str = "") -> None:
         checks[check] = False
         failures.add(code)
+        if detail:
+            details.append(f"{code}: {detail[:160]}")
 
     refusal_seen = False
     uncited_claim = False
@@ -110,7 +115,7 @@ def verify_v0(answer: str, sources: Mapping[str, Chunk], *, support_threshold: f
             claim_sentences += 1
             if not valid:
                 uncited_claim = True
-                bad("citation_coverage", "uncited_claim")
+                bad("citation_coverage", "uncited_claim", s)
                 continue
         if not valid:
             continue
@@ -119,27 +124,29 @@ def verify_v0(answer: str, sources: Mapping[str, Chunk], *, support_threshold: f
         body = CITE_RE.sub("", s).replace(EXTRACTIVE_PREFIX, " ").strip()
         for q in _QUOTE_RE.findall(body):
             if not phrase_in(norm, q):
-                bad("quote_fidelity", "fabricated_quote")
+                bad("quote_fidelity", "fabricated_quote", q)
         ev_nums = set(_NUM_RE.findall(raw))
-        if any(n not in ev_nums for n in _NUM_RE.findall(body)):
-            bad("number_entity_grounding", "ungrounded_number")
+        missing_nums = [n for n in _NUM_RE.findall(body) if n not in ev_nums]
+        if missing_nums:
+            bad("number_entity_grounding", "ungrounded_number", ", ".join(missing_nums))
         ev_words = set(norm.split())
         words = body.split()
         acr = [a.lower() for a in _ACRONYM_RE.findall(body)]
         names = [n.lower() for n in _NAME_RE.findall(" ".join(words[1:]))]
-        if any(w not in ev_words for w in acr + names):
-            bad("number_entity_grounding", "ungrounded_entity")
+        missing_ents = [w for w in acr + names if w not in ev_words]
+        if missing_ents:
+            bad("number_entity_grounding", "ungrounded_entity", ", ".join(missing_ents))
         toks = [t for t in tokenize(body) if not t.isdigit()]
         if len(toks) >= 4:
             ev_tokens = set(tokenize(raw))
             if sum(1 for t in toks if t in ev_tokens) / len(toks) < support_threshold:
-                bad("lexical_support", "unsupported_sentence")
+                bad("lexical_support", "unsupported_sentence", s)
     if refusal_seen and uncited_claim:
         bad("refusal_consistency", "refusal_with_uncited_claims")
     refusal_only = refusal_seen and claim_sentences == 0
     return V0Result(
         passed=not failures, refusal=refusal_only, failures=sorted(failures), checks=checks,
-        cited=sorted(set(cited_all)), ms=(time.perf_counter() - t0) * 1000.0,
+        cited=sorted(set(cited_all)), ms=(time.perf_counter() - t0) * 1000.0, details=details,
     )
 
 

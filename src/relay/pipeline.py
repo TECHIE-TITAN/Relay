@@ -315,7 +315,8 @@ class Pipeline:
         out.v0_passed = v0.passed
         out.v0_failures = list(v0.failures)
         ctx.emit("verify_result", attempt=attempt, passed=v0.passed, failures=v0.failures, checks=v0.checks,
-                 refusal=v0.refusal, ms=round(v0.ms, 3), cited=v0.cited)
+                 refusal=v0.refusal, ms=round(v0.ms, 3), cited=v0.cited, details=v0.details,
+                 text=(text or "")[:2000])      # the text that was checked: needed to grade and to diagnose rejections
         return v0
 
     def _on_draft_failure(self, ctx: RequestContext, out: RequestOutcome, question: str, hits: Sequence[Hit],
@@ -365,7 +366,8 @@ class Pipeline:
         now = self.clock()
         ctx.release_at = now
         out.first_token_ms = (now - ctx.arrive) * 1000.0
-        ctx.emit("first_token", user_visible=True, ms=round(out.first_token_ms, 1), mode=mode)
+        ctx.emit("first_token", user_visible=True, ms=round(out.first_token_ms, 1), mode=mode,
+                 answer=out.answer[:2000])      # what the user actually sees (citations rendered)
         ctx.emit("last_token")
         if self.cfg.cache_enabled and mode == "llm" and v0 is not None and v0.passed:
             self.cache[self._cache_key(ctx.question)] = (out.answer, mode)   # the rendered answer

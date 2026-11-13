@@ -127,6 +127,63 @@ def test_answer_that_fails_v0_twice_is_never_released_extractive_fallback_is():
     assert attempts == [(1, False), (2, False), (3, True)]
 
 
+def test_events_record_the_checked_draft_exact_failure_reasons_and_released_answer():
+    draft = "The encoder has 12 identical layers [S1]."
+    bad = ok_result(text=draft)
+    log, client, *_, (out,) = run([bad, bad])
+    v = events_named(log, "verify_result")
+    # attempt 1: the model's draft exactly as checked, with the exact reason and offending value
+    assert v[0]["attempt"] == 1 and v[0]["text"] == draft and v[0]["passed"] is False
+    assert v[0]["failures"] == ["ungrounded_number"] and v[0]["details"] == ["ungrounded_number: 12"]
+    # attempt 2: the regenerated draft (same scripted text here)
+    assert v[1]["attempt"] == 2 and v[1]["text"] == draft and v[1]["details"] == ["ungrounded_number: 12"]
+    # attempt 3: the extractive fallback that was actually released, which passes with no details
+    assert v[2]["attempt"] == 3 and v[2]["passed"] is True and v[2]["details"] == []
+    assert "N = 6 identical layers" in v[2]["text"]
+    # the user-visible event carries the final answer with citations rendered, identical to the outcome
+    ft = events_named(log, "first_token")[0]
+    assert ft["answer"] == out.answer and ft["mode"] == "extractive"
+    assert "[S1]" not in ft["answer"] and "[attention, pdf p.3" in ft["answer"]
+
+
+def test_released_answer_is_logged_for_llm_answers_and_free_refusals_too():
+    log, *_, (out,) = run([ok_result(text=GOOD)])
+    assert events_named(log, "first_token")[0]["answer"] == out.answer and "N = 6 identical layers" in out.answer
+    assert events_named(log, "verify_result")[0]["text"] == GOOD and events_named(log, "verify_result")[0]["details"] == []
+    log, *_, (out,) = run([], requests=((UNANSWERABLE, 5.0),))
+    assert events_named(log, "first_token")[0]["answer"] == out.answer and not events_named(log, "verify_result")
+
+
+def test_with_regeneration_on_a_twice_failed_draft_ends_extractive_and_reports_the_regeneration():
+    # Default test config: regenerate=True. Two model calls (draft, regenerate), then the extractive fallback.
+    bad = ok_result(text="The encoder has 12 identical layers [S1].")
+    log, client, *_, (out,) = run([bad, bad])
+    assert (out.status, out.answer_mode, out.v0_passed, out.regenerated) == ("ok", "extractive", True, True)
+    assert len(client.calls) == 2
+    assert out.v0_failures == []                        # the outcome reflects the released (extractive) answer, as before
+
+
+def test_pilot_configuration_regeneration_off_goes_straight_to_extractive_after_one_model_call():
+    # Mirrors the quality_measure pilot (regenerate: false): attempts are 1 (the draft) and 3 (the extractive text).
+    draft = "The encoder has 12 identical layers [S1]."
+    log, client, *_, (out,) = run([ok_result(text=draft)], p=pcfg(regenerate=False))
+    assert len(client.calls) == 1 and not out.regenerated                   # one model call, no regeneration
+    assert (out.status, out.answer_mode, out.v0_passed) == ("ok", "extractive", True)
+    v = events_named(log, "verify_result")
+    assert [(e["attempt"], e["passed"]) for e in v] == [(1, False), (3, True)]
+    assert v[0]["text"] == draft and v[0]["details"] == ["ungrounded_number: 12"]
+    assert [e["purpose"] for e in events_named(log, "send")] == ["draft"]    # no "regenerate" send
+    assert events_named(log, "degrade")[0]["reason"] == "v0_failed"
+    ft = events_named(log, "first_token")[0]
+    assert ft["mode"] == "extractive" and ft["answer"] == out.answer
+
+
+def test_long_checked_text_is_truncated_in_the_log_only():
+    long_text = ("The encoder has identical layers [S1]. " * 100).strip()
+    log, *_ = run([ok_result(text=long_text), ok_result(text=long_text)])
+    assert len(events_named(log, "verify_result")[0]["text"]) <= 2000
+
+
 def test_unverifiable_everything_ends_in_an_honest_refusal():
     # The retrieved passage is too short to quote (under 6 words), so there is no extractive fallback either.
     bad = ok_result(text="Zebras migrate across savannas every single season [S1].")
