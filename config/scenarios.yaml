@@ -1,0 +1,118 @@
+# Load scenarios for `python -m relay.cli run --scenario NAME`.
+#
+# PROVENANCE. Everything under `standin:` is CHOSEN (SIMULATED): none of it is measured
+# from Groq. The stand-in's rate limits are the DOCUMENTED account limits (config/limits.yaml)
+# multiplied by `limits_scale`. The scale is a SIMULATED choice made so that a few minutes of
+# load produce a usable number of requests: at the documented 8K TPM only about 3-4 answers
+# fit in a minute. Set limits_scale: 1 to run at the documented numbers (slow, small samples).
+# The scale actually used is written to every run manifest.
+#
+# Load is OPEN-LOOP: arrival times come from a seeded Poisson schedule and never wait for
+# earlier requests, so a slow system cannot slow its own load down. A request is abandoned
+# (status timeout) when its patience `deadline_s` runs out.
+#
+# rate_x is a multiple of capacity. Capacity here is ARITHMETIC, not a measurement:
+# min(RPM/60, TPM/60/est_tokens_per_answer) in answers per second.
+
+defaults:
+  source: standin              # standin | real  (real needs --allow-real and max_requests)
+  setting: S2                  # retrieval setting, see relay.yaml
+  seed: 1
+  deadline_s: 20               # per-request patience / absolute deadline
+  limits_scale: 5              # SIMULATED, see above
+  est_tokens_per_answer: 2200  # for the capacity arithmetic only
+  drain_s: 10                  # extra time after the last arrival before the run is closed
+  state_interval_s: 1.0        # gateway_state sampling
+  standin: {}                  # overrides of src/relay/standin/profile.py fields
+  gateway: {}                  # overrides of GatewayConfig
+  admission: {n_inflight: 4, queue_cap: 40, newest_first_after_s: 5.0, min_service_s: 1.5, estimate_check: true}
+  pipeline: {}                 # overrides of PipelineConfig
+  controls: []                 # [{at_s: 60, set: {rpm: "x0.5"}}]  "xK" = K times the scaled limit
+
+scenarios:
+
+  smoke:
+    description: "30 s at 60% of capacity. Run this first to check that everything is wired."
+    phases: [{start_s: 0, duration_s: 30, rate_x: 0.6}]
+    drain_s: 15
+
+  steady:
+    description: "Constant Poisson load at 70% of capacity, 3 minutes."
+    phases: [{start_s: 0, duration_s: 180, rate_x: 0.7}]
+
+  burst:
+    description: "Calm, then 10x capacity for 20 s, then calm again: does it recover?"
+    phases:
+      - {start_s: 0,   duration_s: 60,  rate_x: 0.5}
+      - {start_s: 60,  duration_s: 20,  rate_x: 10.0}
+      - {start_s: 80,  duration_s: 100, rate_x: 0.5}
+
+  sustained_overload:
+    description: "2.5x capacity for 4 minutes."
+    phases: [{start_s: 0, duration_s: 240, rate_x: 2.5}]
+
+  limit_halved:
+    description: "Steady 70% load; at t=90 s the stand-in halves its per-minute request and token limits without telling the client."
+    phases: [{start_s: 0, duration_s: 240, rate_x: 0.7}]
+    controls:
+      - {at_s: 90, set: {rpm: "x0.5", tpm: "x0.5"}}
+
+  daily_exhausted:
+    description: "SIMULATED daily budget: at t=90 s the stand-in's daily token budget hits zero. The stand-in's daily-limit response is a guess, not Groq's behaviour."
+    phases: [{start_s: 0, duration_s: 180, rate_x: 0.7}]
+    controls:
+      - {at_s: 90, set: {tpd: 1}}
+
+  # "Retry made things worse": the same slow-tail stand-in and load, a naive client against the budgeted one.
+  retry_naive:
+    description: "Naive client: no limiter, 2 s call timeout, up to 3 immediate retries, no global pause, unbounded queue."
+    phases: [{start_s: 0, duration_s: 180, rate_x: 0.8}]
+    standin: {p_slow: 0.15, slow_factor: 6.0}
+    gateway:
+      limiter_enabled: false
+      global_pause: false
+      discretionary_share: null
+      call_timeout_s: 2.0
+      first_token_timeout_s: null
+      max_retries_per_call: 3
+      max_attempts_per_request: 4
+      backoff_base_s: 0.05
+      backoff_cap_s: 0.2
+      honor_retry_after: false
+    admission: {n_inflight: 1000, queue_cap: 100000, newest_first_after_s: 1000000.0, min_service_s: 0.0, estimate_check: false}
+    pipeline: {ladder_enabled: false}
+
+  retry_budgeted:
+    description: "Same load and stand-in as retry_naive, with the budgeted retry policy (the defaults)."
+    phases: [{start_s: 0, duration_s: 180, rate_x: 0.8}]
+    standin: {p_slow: 0.15, slow_factor: 6.0}
+
+  # ---- real-service quality runs: sequential, one question at a time. NOT load tests. ----
+  # They spend real quota. They refuse to start without --allow-real, and the daily ledger caps the spend.
+  quality_S2:
+    description: "20 questions once each on the real model, retrieval setting S2."
+    source: real
+    kind: sequential
+    setting: S2
+    deadline_s: 90
+    limits_scale: 1
+    max_requests: 20
+    gateway: {call_timeout_s: 40.0, first_token_timeout_s: 30.0}
+  quality_S3:
+    description: "As quality_S2 with retrieval setting S3."
+    source: real
+    kind: sequential
+    setting: S3
+    deadline_s: 90
+    limits_scale: 1
+    max_requests: 20
+    gateway: {call_timeout_s: 40.0, first_token_timeout_s: 30.0}
+  quality_S4:
+    description: "As quality_S2 with retrieval setting S4."
+    source: real
+    kind: sequential
+    setting: S4
+    deadline_s: 90
+    limits_scale: 1
+    max_requests: 20
+    gateway: {call_timeout_s: 40.0, first_token_timeout_s: 30.0}

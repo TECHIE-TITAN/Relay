@@ -9,12 +9,18 @@ Commands
   inspect         show extracted blocks of one page (to see headings, noise, tables)
   eval-retrieval  score retrieval offline against your questions file
   check-gold      verify gold pages and evidence phrases against the extracted text
+  standin         run the stand-in model server (SIMULATED behaviour, no network beyond localhost)
+  list-scenarios  show the scenarios in config/scenarios.yaml
+  run             run a load scenario (stand-in by default; real needs --allow-real)
+  summarize       print the summary and invariants of a finished run
 
-No command in this module calls the model provider.
+Only `run` with a scenario whose source is `real` and --allow-real can call the model provider.
+Everything else, including every stand-in run, stays on this machine (ingest alone contacts arxiv.org).
 """
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import statistics
 import sys
@@ -212,8 +218,133 @@ def cmd_eval(args: argparse.Namespace) -> int:
     return 0
 
 
+def _fmt(v: object, nd: int = 0) -> str:
+    if v is None:
+        return "n/a"
+    if isinstance(v, float):
+        return f"{v:.{nd}f}"
+    return str(v)
+
+
+def _dist_line(label: str, d: dict) -> str:
+    line = (f"{label:<18} n={d['n']:<4} p50={_fmt(d['p50'])} p95={_fmt(d['p95'])} "
+            f"p99={_fmt(d['p99'])} max={_fmt(d['max'])}")
+    notes = [x for x in (d.get("note"), d.get("p99_note")) if x]
+    return line + ("   [" + "; ".join(notes) + "]" if notes else "")
+
+
+def format_summary(manifest: dict, summary: dict, invariants: list) -> str:
+    sc = summary["status_counts"]
+    n = summary["n_requests"]
+    pct = lambda k: f"{100.0 * sc[k] / n:.1f}%" if n else "n/a"   # noqa: E731
+    lines = [
+        f"run {manifest.get('run_id')}   scenario {summary['scenario']}   source {summary['source']}",
+        f"provenance: {summary['provenance']}",
+        f"requests {n}   ok {sc['ok']} ({pct('ok')})   rate_limited {sc['rate_limited']} ({pct('rate_limited')})   "
+        f"timeout {sc['timeout']} ({pct('timeout')})   error {sc['error']} ({pct('error')})   "
+        f"unfinished {summary['n_incomplete']}",
+        f"ok answers by mode {summary['ok_by_answer_mode']}   extractive (degraded) {summary['degraded_ok']}   "
+        f"shed at door {summary['shed_reasons']}",
+        _dist_line("first_token_ms (ok)", summary["first_token_ms"]),
+        _dist_line("total_ms (ok)", summary["total_ms_ok"]),
+        _dist_line("total_ms (all)", summary["total_ms_all"]),
+        f"goodput/min {_fmt(summary['goodput_per_min'], 1)}   attempts {summary['attempts_total']}   "
+        f"retries {summary['retries_total']} (in {summary['requests_with_retries']} requests)   "
+        f"discretionary calls {summary['discretionary_calls_total']}   regenerations {summary['regenerations']}",
+        f"tokens in {summary['tokens_in']}  out {summary['tokens_out']}  per answer {_fmt(summary['tokens_per_answer'])}  "
+        f"unaccounted est (failed calls) {summary['tokens_unaccounted_est']}",
+        f"notional cost per 1000 answers (USD, {manifest.get('prices', {}).get('provenance')}): "
+        f"{_fmt(summary['notional_cost_per_1000_answers_usd'], 4)}",
+        f"peak queue {_fmt(summary['peak_queue_len'])}   peak in flight {_fmt(summary['peak_inflight'])}   "
+        f"max launch lag ms {_fmt(summary.get('max_launch_lag_ms'), 1)}",
+        "invariants:",
+    ]
+    for r in invariants:
+        state = "n/a" if not r["applicable"] else ("PASS" if r["passed"] else f"FAIL ({r['n_violations']})")
+        lines.append(f"  {r['id']} {state:<9} checked {r['checked']:<5} {r['description']}")
+    if manifest.get("source") == "stand-in":
+        lines.append("NOTE: stand-in run. Latency and limit numbers describe the stand-in's parameters; no quality number may be taken from it.")
+    return "\n".join(lines)
+
+
+def cmd_standin(args: argparse.Namespace) -> int:
+    from .standin.server import main as standin_main
+
+    argv = ["--host", args.host, "--port", str(args.port), "--seed", str(args.seed),
+            "--limits-scale", str(args.limits_scale)]
+    for s in args.set or []:
+        argv += ["--set", s]
+    return standin_main(argv)
+
+
+def cmd_list_scenarios(args: argparse.Namespace) -> int:
+    from .runner import load_scenarios, resolve_scenario
+
+    cfg = load_config()
+    path = args.scenarios_file or cfg.root / "config" / "scenarios.yaml"
+    doc = load_scenarios(path)
+    for name in doc["scenarios"]:
+        s = resolve_scenario(doc, name)
+        print(f"{name:<20} {s.get('source', 'standin'):<8} {s.get('description', '')}")
+    return 0
+
+
+def cmd_run(args: argparse.Namespace) -> int:
+    from .runner import load_scenarios, resolve_scenario, run_scenario, spawn_standin
+
+    cfg = load_config()
+    path = args.scenarios_file or cfg.root / "config" / "scenarios.yaml"
+    scn = resolve_scenario(load_scenarios(path), args.scenario)
+    if args.setting:
+        cfg.setting(args.setting)           # validates
+        scn["setting"] = args.setting
+    url = args.standin_url
+    proc = None
+    if args.spawn_standin and scn.get("source", "standin") == "standin":
+        proc = spawn_standin(args.port)
+        url = f"http://127.0.0.1:{args.port}"
+    try:
+        res = asyncio.run(run_scenario(cfg, scn, run_id=args.run_id, standin_url=url,
+                                       allow_real=args.allow_real, scenarios_file=str(path)))
+    finally:
+        if proc is not None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except Exception:
+                proc.kill()
+    from .artifacts import read_manifest
+
+    print(format_summary(read_manifest(res.paths.manifest), res.summary, res.invariants))
+    print(f"\nartifacts: {res.paths.root}")
+    return 0
+
+
+def cmd_summarize(args: argparse.Namespace) -> int:
+    from .artifacts import list_runs, read_events, read_manifest, run_paths
+    from .metrics import check_invariants, request_rows, summarize
+
+    cfg = load_config()
+    run_id = args.run
+    if run_id == "latest":
+        runs = list_runs(cfg.paths.results_dir)
+        if not runs:
+            raise RelayError("no runs found under results/runs")
+        run_id = runs[-1]
+    paths = run_paths(cfg.paths.results_dir, run_id)
+    manifest = read_manifest(paths.manifest)
+    events = read_events(paths.events)
+    rows = request_rows(events, manifest)
+    summary = summarize(rows, events, manifest)
+    lags = [e["lag_ms"] for e in events if e["event"] == "launch"]
+    summary["max_launch_lag_ms"] = max(lags) if lags else None
+    invariants = check_invariants(events, manifest.get("invariant_params") or {})
+    print(format_summary(manifest, summary, invariants))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="relay", description="The Relay: Phase 0/1 tools")
+    p = argparse.ArgumentParser(prog="relay", description="The Relay: command line tools")
     sub = p.add_subparsers(dest="command", required=True)
 
     sub.add_parser("config", help="show resolved configuration").set_defaults(func=cmd_config)
@@ -253,6 +384,33 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("check-gold", help="verify gold pages and evidence phrases against the extracted text")
     s.add_argument("--questions", type=_path_arg, help="questions file (default from config)")
     s.set_defaults(func=cmd_check_gold)
+
+    s = sub.add_parser("standin", help="run the stand-in model server (SIMULATED)")
+    s.add_argument("--host", default="127.0.0.1")
+    s.add_argument("--port", type=int, default=8089)
+    s.add_argument("--seed", type=int, default=1)
+    s.add_argument("--limits-scale", type=float, default=1.0)
+    s.add_argument("--set", action="append", help="override a profile field, KEY=VALUE (repeatable)")
+    s.set_defaults(func=cmd_standin)
+
+    s = sub.add_parser("list-scenarios", help="show the scenarios")
+    s.add_argument("--scenarios-file", type=_path_arg)
+    s.set_defaults(func=cmd_list_scenarios)
+
+    s = sub.add_parser("run", help="run a load scenario")
+    s.add_argument("--scenario", required=True)
+    s.add_argument("--scenarios-file", type=_path_arg)
+    s.add_argument("--standin-url", default="http://127.0.0.1:8089", help="stand-in server (default %(default)s)")
+    s.add_argument("--spawn-standin", action="store_true", help="start a stand-in server for this run and stop it afterwards")
+    s.add_argument("--port", type=int, default=8089, help="port for --spawn-standin")
+    s.add_argument("--setting", help="override the scenario's retrieval setting")
+    s.add_argument("--run-id")
+    s.add_argument("--allow-real", action="store_true", help="REQUIRED for a scenario that calls the real service (spends quota)")
+    s.set_defaults(func=cmd_run)
+
+    s = sub.add_parser("summarize", help="summary and invariants of a finished run")
+    s.add_argument("--run", default="latest", help="run id, or 'latest'")
+    s.set_defaults(func=cmd_summarize)
     return p
 
 

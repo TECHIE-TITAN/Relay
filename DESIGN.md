@@ -642,3 +642,33 @@ The stand-in absorbs all heavy load runs. Total real tokens needed is more than 
 - *Frontend quality:* `typecheck`, `build`, `test` pass; regenerated API types give no diff; works at 360px and 1440px with no horizontal page scroll; every chart has a view-as-table toggle; visible focus; AA contrast; reduced motion honoured; Network tab shows only localhost; trace view shows the before/after-first-token marker and the three-way split with an explicit "unaccounted" remainder; Limits view shows the three layers with as-of times.
 
 Charts are written only after loading the `dataviz` skill; the UI is written with the `frontend-design` skill.
+
+## 15. Phase 2 as built (2026-11-13): stand-in, gateway, pipeline, runner
+
+Code is the source of truth where it differs from sections 3 to 8. Nothing here has been run by the assistant; the author runs the tests and scenarios.
+
+**Files.** `standin/{profile,server}.py`, `llm_client.py`, `gateway.py`, `admission.py`, `tracing.py`, `artifacts.py`, `prompts.py`, `verify.py`, `pipeline.py`, `metrics.py`, `runner.py`, `config/scenarios.yaml`, CLI commands `standin`, `list-scenarios`, `run`, `summarize`. New dependencies: `fastapi`, `uvicorn`.
+
+**Kept as designed.** One absolute deadline per request, never extended. Bounded door queue (FIFO, newest-first once the head is stale) plus an in-flight cap N, with admission by estimate and a dequeue-time feasibility check. Retries are discretionary calls: they stay in the slot, re-enter the same FIFO behind first attempts, draw on a capped share (fail fast when empty), respect a global pause, are capped per call and per request, and are never applied to a daily 429. Mandatory local V0 on every released answer at every ladder level. Buffer, verify, release: the user-visible first token is the release time and the model's own first token is logged separately. Open-loop load with the scheduling lag of every launch logged. Invariants I1 to I6 recomputed from `events.jsonl`.
+
+**Deviations (deliberate).**
+1. *Sliding 60 s windows instead of refill-rate buckets* for requests and tokens. A refill bucket with a one-minute burst can send up to twice the limit inside one 60 s window; a window log cannot. Reserve-then-reconcile is unchanged. The real provider's window type (fixed or rolling) is still undocumented, hence the headroom.
+2. *The discretionary share always admits one call per 60 s window.* At the documented 8K TPM a 15 % share is 1,200 tokens, smaller than one answer (about 2.5K), so a strict share would forbid every retry. The share caps what follows that first call.
+3. *`limits_scale` (default 5) in stand-in scenarios.* At the documented limits only 3 to 4 answers fit per minute, which gives samples too small to say anything. Stand-in limits are the DOCUMENTED limits times this scale, a SIMULATED choice recorded in every manifest. `limits_scale: 1` runs at the documented numbers. Real runs require 1.
+4. *Ladder level 1 changes nothing* in this build, because there is no V1 (optional LLM verify). Level 2 lowers k and max tokens; there is no smaller model.
+5. *Level 4 is a cached answer or an honest busy message*, as designed. A local extractive answer would still be possible when the budget is gone, but the design said busy, so it says busy.
+6. *Extractive fallback is used* when V0 fails twice, at ladder level 3, and when the gateway cannot afford quota in time (`limiter_timeout`, `budget_denied`, retries exhausted on 429s). Provider 5xx and timeouts are reported as `error` or `timeout`, not hidden behind an extractive answer. Extractive answers count as `ok` with `answer_mode=extractive`, and summaries report them as degraded.
+7. *Status mapping:* shed at the door or deadline passed means `timeout`; 429s, no affordable quota or exhausted daily budget means `rate_limited`; everything else means `error`. The finer reason is in the `done` event (`fail_stage`, `fail_reason`, `shed_reason`). A V0 refusal ("could not produce an answer that passed the checks") is `ok` with `answer_mode=refusal` and counts as a wrong refusal for an answerable question in the quality study.
+8. *Not built:* coalescing (single-flight), adaptive N, LLM rewrite, V1, scheduler ablation. The verified-answer cache exists but is off in every scenario, since 20 questions repeat in a load run and a cache would inflate throughput.
+9. *The one-reformulation loop exists but is off by default* (`reformulate_once`). Dropping common words raises query-term coverage, which loosens the abstain rule the retrieval study measured, so it needs its own measurement before being switched on. The regeneration loop after a V0 failure is on.
+10. *`answer_grade` is always blank* in this phase. Grading is the quality study's job and is never invented.
+
+**Assumptions to verify on the first real call** (none is documented in `limits.yaml`): that Groq accepts `reasoning_effort: low` (set in `relay.yaml`; delete if rejected); where streaming usage appears (the client reads top-level `usage` and `x_groq.usage`, and marks the call `usage_source=estimated` if neither is present); whether `stream_options.include_usage` is accepted (off for real runs by default); whether `max_completion_tokens` counts toward TPM up front (the gateway reserves it; so does the stand-in, which is a SIMULATED choice); whether rejected requests count toward RPM (the gateway counts them, the stand-in does not); the daily reset time (the ledger assumes the UTC date). The minute-vs-day 429 classifier is a guess (SIMULATED (guess)) and logs how each classification was made.
+
+**Known limitations.**
+- V0 check 5 is word overlap, not entailment; its threshold (0.5) is uncalibrated. It can pass a sentence built from the source's words that means something else, and reject a faithful paraphrase.
+- The stand-in's replies are templated and quote the first source, so no quality number may come from stand-in runs. Its failures are independent coin flips; real incidents are correlated.
+- Through `httpx.ASGITransport` (used only in tests) streams are buffered, so no timing is taken from tests. Runs use a real local server.
+- Failed calls report no provider usage. Their tokens are tracked separately as `tokens_unaccounted_est` (an estimate) and are not added to `tokens_in/out`, which hold provider-reported usage only. The daily ledger does count a conservative estimate for them.
+- The client-side daily ledger counts only this tool's calls; anything else on the account is invisible to it.
+- Capacity ("rate_x") is arithmetic on the limits and an assumed 2,200 tokens per answer, not a measurement.
