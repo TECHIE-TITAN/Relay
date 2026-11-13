@@ -162,6 +162,18 @@ def test_header_sync_resizes_token_window_and_adds_missing_usage():
     assert events_named(log, "ratelimit_headers")
 
 
+def test_real_429_shape_without_token_headers_leaves_the_window_alone_and_still_retries():
+    # Shape observed from the real service (results/probe_real.jsonl): a request-limit 429 carries
+    # retry-after and the request-limit headers only, with no x-ratelimit-*-tokens.
+    hdr = {"retry-after": "2", "x-ratelimit-limit-requests": "1000", "x-ratelimit-remaining-requests": "938",
+           "x-ratelimit-reset-requests": "1h29m16.8s"}
+    client = FakeClient([err_result("rate_limit_minute", 429, retry_after=0.1, headers=hdr), ok_result()])
+    gw, log, (out,), _ = run_call(client, cfg(tpm=8000))
+    assert out.ok and out.retries == 1
+    assert gw.base_tpm == 8000 and not events_named(log, "limit_changed")
+    assert not events_named(log, "header_sync")
+
+
 def test_failed_call_without_usage_is_not_reported_as_provider_tokens():
     client = FakeClient([err_result("timeout"), ok_result(tin=60, tout=40)])
     _, log, (out,), (ctx,) = run_call(client, cfg())

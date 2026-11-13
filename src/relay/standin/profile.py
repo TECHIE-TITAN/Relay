@@ -18,12 +18,17 @@ from typing import Any, Mapping
 class StandinProfile:
     seed: int = 1
     # Latency (SIMULATED).
-    ttft_median_ms: float = 400.0      # time to first content token, lognormal median
-    ttft_sigma: float = 0.35           # lognormal sigma
-    tokens_per_s: float = 150.0        # decode speed at no load
+    # CALIBRATED against the real probe (results/probe_real.jsonl, n=40 calls, tiny to ~1.5K-token
+    # prompts): median TTFT ~580 ms, max 2.1 s. The sigma is a SIMULATED fit to that spread.
+    ttft_median_ms: float = 580.0      # time to first content token, lognormal median
+    ttft_sigma: float = 0.45           # lognormal sigma (SIMULATED fit; the real tail is thin data)
+    # NOT calibrated: the probe's replies were 29-37 tokens, too short to measure decode speed.
+    tokens_per_s: float = 150.0        # decode speed at no load (SIMULATED)
     stream_chunk_words: int = 3        # words per SSE event
+    # The real probe showed no TTFT growth from 1 to 4 concurrent tiny calls, so the default
+    # has no concurrency slowdown. Set slowdown_alpha > 0 in a scenario only as a labelled stress.
     knee_inflight: int = 4             # concurrent requests before slowdown begins
-    slowdown_alpha: float = 0.15       # latency x (1 + alpha * max(0, inflight - knee))
+    slowdown_alpha: float = 0.0        # latency x (1 + alpha * max(0, inflight - knee))
     # Rate limits the stand-in enforces. 0 means "no limit of this kind".
     rpm: int = 30
     tpm: int = 8000
