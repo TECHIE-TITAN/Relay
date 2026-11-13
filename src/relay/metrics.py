@@ -204,6 +204,8 @@ def summarize(rows: Sequence[Mapping[str, Any]], events: Sequence[Mapping[str, A
         "shed_reasons": dict(sheds),
         "goodput_per_min": (len(ok) / duration * 60.0) if duration else None,
         "first_token_ms": dist_summary([r["first_token_ms"] for r in ok if r["first_token_ms"] is not None]),
+        "first_token_ms_llm": dist_summary([r["first_token_ms"] for r in llm_ok if r["first_token_ms"] is not None]),
+        "total_ms_llm": dist_summary([r["total_ms"] for r in llm_ok]),
         "total_ms_ok": dist_summary([r["total_ms"] for r in ok]),
         "total_ms_all": dist_summary([r["total_ms"] for r in rows]),
         "retries_total": sum(r["retries"] or 0 for r in rows),

@@ -246,6 +246,8 @@ def format_summary(manifest: dict, summary: dict, invariants: list) -> str:
         f"ok answers by mode {summary['ok_by_answer_mode']}   extractive (degraded) {summary['degraded_ok']}   "
         f"shed at door {summary['shed_reasons']}",
         _dist_line("first_token_ms (ok)", summary["first_token_ms"]),
+        _dist_line("first_token (model)", summary["first_token_ms_llm"]),
+        _dist_line("total_ms (model)", summary["total_ms_llm"]),
         _dist_line("total_ms (ok)", summary["total_ms_ok"]),
         _dist_line("total_ms (all)", summary["total_ms_all"]),
         f"goodput/min {_fmt(summary['goodput_per_min'], 1)}   attempts {summary['attempts_total']}   "
